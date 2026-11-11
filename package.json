@@ -54,6 +54,8 @@
       "**/*",
       "!dist/*",
       "!.github/*",
+      "!.trae-html-share-packages/**",
+      "!build-win.cmd",
       "!test/*",
       "!README.md",
       "!node_modules/ffmpeg-static/ffmpeg.exe",

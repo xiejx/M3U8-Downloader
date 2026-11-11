@@ -78,6 +78,18 @@
                                                         <span class="value">{{o.statusText}}</span>
                                                     </span>
                                                 </div>
+                                                <div class="filestat" v-if="!o.isLiving">
+                                                    <template v-if="o.segment_stats_total">
+                                                        <span class="ok">{{$t('taskDetail.labels.succeeded')}}
+                                                            {{o.segment_succeeded || 0}}</span>
+                                                        <span class="fail">{{$t('taskDetail.labels.failed')}}
+                                                            {{o.segment_failed || 0}}</span>
+                                                        <span class="total">{{$t('taskDetail.labels.total')}}
+                                                            {{o.segment_stats_total}}</span>
+                                                    </template>
+                                                    <el-button class="detailbtn" type="text" icon="el-icon-view"
+                                                        @click="clickTaskDetail(o)">{{$t('taskDetail.buttons.detail')}}</el-button>
+                                                </div>
                                             </div>
                                             <div class="opt">
                                                 <div class="top">
@@ -94,8 +106,8 @@
                                                         v-if="o.status == taskStatus.mergeFaild"></el-button>
                                                     <el-button class="StartStop is-text" circle size="mini"
                                                         @click="clickItemOptData" opt="StartOrStop" :data="o.id"
-                                                        :type="o.status == taskStatus.pause ? 'warning' : 'primary'"
-                                                        :icon="o.status == taskStatus.pause ? 'el-icon-download' : 'fas fa-circle-notch fa-spin'"
+                                                        :type="isTaskRunning(o.status) ? 'primary' : 'warning'"
+                                                        :icon="isTaskRunning(o.status) ? 'fas fa-circle-notch fa-spin' : (o.status == taskStatus.pause ? 'el-icon-download' : 'el-icon-refresh-right')"
                                                         v-if="![taskStatus.done,taskStatus.downloadFaild,taskStatus.mergeFaild,taskStatus.parsingFailed,taskStatus.saveFolderNoExist].includes(o.status)"></el-button>
                                                     <el-button class="del is-text" circle type="" icon="el-icon-close"
                                                         @click="clickItemOptData" opt="delvideo" :data="o.id"
@@ -233,6 +245,39 @@
                                                     </el-button>
                                                 </el-col>
                                             </el-row>
+                                        </div>
+                                    </el-dialog>
+                                    <el-dialog :title="$t('taskDetail.title')" :visible.sync="dlg_taskdetail_visible"
+                                        width="70%" :modal="true" :close-on-click-modal="true"
+                                        :close-on-press-escape="true" @closed="clickCloseTaskDetail">
+                                        <div class="task-detail">
+                                            <p class="detail-name">
+                                                {{dlg_taskdetail_task ? dlg_taskdetail_task.taskName : ''}}</p>
+                                            <div class="detail-summary">
+                                                <span class="ok">{{$t('taskDetail.labels.succeeded')}}
+                                                    <b>{{dlg_taskdetail_stats.succeeded}}</b></span>
+                                                <span class="fail">{{$t('taskDetail.labels.failed')}}
+                                                    <b>{{dlg_taskdetail_stats.failed}}</b></span>
+                                                <span class="downloading">{{$t('taskDetail.labels.downloading')}}
+                                                    <b>{{dlg_taskdetail_stats.downloading}}</b></span>
+                                                <span class="pending">{{$t('taskDetail.labels.pending')}}
+                                                    <b>{{dlg_taskdetail_stats.pending}}</b></span>
+                                                <span class="total">{{$t('taskDetail.labels.total')}}
+                                                    <b>{{dlg_taskdetail_stats.total}}</b></span>
+                                            </div>
+                                            <div class="detail-legend">
+                                                <span class="cell s2"></span>{{$t('taskDetail.labels.succeeded')}}
+                                                <span class="cell s3"></span>{{$t('taskDetail.labels.failed')}}
+                                                <span class="cell s1"></span>{{$t('taskDetail.labels.downloading')}}
+                                                <span class="cell s0"></span>{{$t('taskDetail.labels.pending')}}
+                                            </div>
+                                            <div class="detail-matrix" v-if="dlg_taskdetail_stats.total">
+                                                <div v-for="(st, i) in dlg_taskdetail_statuses" :key="i"
+                                                    class="cell" :class="'s' + st"
+                                                    :title="(i + 1) + ' - ' + statusLabel(st)"></div>
+                                            </div>
+                                            <el-alert v-else :title="$t('taskDetail.tips.empty')" type="info"
+                                                :closable="false" show-icon></el-alert>
                                         </div>
                                     </el-dialog>
                                 </el-tab-pane>
@@ -494,6 +539,28 @@
                             <br />
                             <el-row :gutter="8">
                                 <el-col :span="4" :offset="1">
+                                    <span class="item-left">{{$t('settings.inputs.concurrency.label')}}</span>
+                                </el-col>
+                                <el-col :span="9">
+                                    <el-input-number v-model="config_downloadConcurrency" :min="1" :max="32"
+                                        :step="1" @change="concurrencyChange"
+                                        style="width: 100%;"></el-input-number>
+                                </el-col>
+                            </el-row>
+                            <br />
+                            <el-row :gutter="8">
+                                <el-col :span="4" :offset="1">
+                                    <span class="item-left">{{$t('settings.inputs.maxRetries.label')}}</span>
+                                </el-col>
+                                <el-col :span="9">
+                                    <el-input-number v-model="config_downloadMaxRetries" :min="1" :max="100"
+                                        :step="1" @change="maxRetriesChange"
+                                        style="width: 100%;"></el-input-number>
+                                </el-col>
+                            </el-row>
+                            <br />
+                            <el-row :gutter="8">
+                                <el-col :span="4" :offset="1">
                                     <span class="item-left">{{$t('settings.inputs.log.label')}}</span>
                                 </el-col>
                                 <el-col :span="4">
@@ -564,51 +631,14 @@
                                         style="max-width: 300px;"
                                         @click="clickOpenGithub">{{$t('about.github')}}</el-button>
                                 </el-col>
-                                <el-col :span="6" style="margin-right: 2rem;">
-                                    <el-button class="mybutton" type="info" icon="el-icon-coffee-cup"
-                                        style="max-width: 400px;"
-                                        @click="clickOpenSponsor">{{$t('buyMEcoffe.button')}}</el-button>
-                                </el-col>
                                 <el-col :span="5" style="margin-right: 2rem;text-align:right;">
-                                    <el-link type="info" target="_blank" :underline="false"
-                                        :href="newVersion_download_url">v{{version}}<sup
+                                    <span style="line-height:34px;color:#909399;">v{{version}}<sup
                                             style="color: #ff2929;margin-left:10px;font-size:10px;">{{version ==
-                                            newVersion? '' : $t('about.newVersion')}}</sup></el-link>
+                                            newVersion? '' : $t('about.newVersion')}}</sup></span>
                                 </el-col>
                             </el-row>
                         </el-tab-pane>
                     </el-tabs>
-                    <el-dialog :title="$t('buyMEcoffe.title')" :visible.sync="dlg_buymecoffe_visible" width="60%"
-                        :modal="true" :close-on-click-modal="true" :close-on-press-escape="true" :center="true"
-                        style="height: 100vh;">
-                        <el-row type="flex" justify="center" align="middle" style="height:50vh;">
-                            <el-card v-if="config_language=='zh-cn'" class="paycode alipay" shadow="always"
-                                style="max-width: 256px;max-height: 300px;margin-right: 10%;">
-                                <img class="image" src="icon/alipay_code.png">
-                                <div style="padding: 14px;word-break: keep-all;">
-                                    <span>{{$t('buyMEcoffe.alipay')}}</span>
-                                </div>
-                            </el-card>
-                            <el-card v-if="config_language=='zh-cn'" class="paycode wechat" shadow="always"
-                                style="max-width: 256px;max-height: 300px;">
-                                <img class="image" src="icon/wechat_code.png">
-                                <div style="padding: 14px;word-break: keep-all;">
-                                    <span>{{$t('buyMEcoffe.wechat')}}</span>
-                                </div>
-                            </el-card>
-                            <el-card v-if="config_language != 'zh-cn'" class="paycode paypal" shadow="always"
-                                style="max-width: 256px;max-height: 300px;">
-                                <img class="image" src="icon/paypal.png">
-                                <div style="padding: 14px;word-break: keep-all;">
-                                    <span>{{$t('buyMEcoffe.paypal')}}</span>
-                                </div>
-                            </el-card>
-                        </el-row>
-                        <el-row :gutter="8" type="flex" justify="center" align="middle">
-                            <span
-                                style="width:70%;height:10vh;text-align:center;color:#cfcf00;white-space:pre-line">{{$t('buyMEcoffe.content')}}</span>
-                        </el-row>
-                    </el-dialog>
                     <el-dialog :title="dlg_category_title" :visible.sync="dlg_category_visible"
                         :width="dlg_category_action == 'delete' ? '500px' : '70%'" :modal="true"
                         :close-on-click-modal="true" :close-on-press-escape="true" :center="true"

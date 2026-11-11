@@ -135,14 +135,79 @@ yarn start
 ```
 ### Package
 
-```
-//windows
-yarn pack-win
+环境要求：已安装 Node.js（本项目在 Node 20 / Node 24 下验证通过）。依赖安装必须使用仓库自带的 Yarn 3（`.yarn/releases/yarn-3.5.1.cjs`），不要使用 `npm install`——`package-lock.json` 中存在残缺条目，npm 会报 `Invalid Version`。
 
-//mac
-yarn pack-mac
+安装依赖（Yarn 3 默认使用 PnP 模式，必须显式指定 `node_modules` 链接模式）：
 
+PowerShell：
+
+```powershell
+$env:YARN_NODE_LINKER = "node-modules"
+node .yarn/releases/yarn-3.5.1.cjs install
 ```
+
+CMD（命令提示符）：
+
+```bat
+set YARN_NODE_LINKER=node-modules
+node .yarn\releases\yarn-3.5.1.cjs install
+```
+
+国内网络建议先设置镜像（非必须）：
+
+PowerShell：
+
+```powershell
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+$env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-builder-binaries/"
+$env:FFMPEG_BINARIES_URL = "https://npmmirror.com/mirrors/ffmpeg-static"
+```
+
+CMD（命令提示符）：
+
+```bat
+set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+set ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+set FFMPEG_BINARIES_URL=https://npmmirror.com/mirrors/ffmpeg-static
+```
+
+打包：
+
+PowerShell：
+
+```powershell
+# Windows：NSIS 安装包 + 免安装 zip
+.\node_modules\.bin\electron-builder.cmd --win --publish never
+
+# macOS
+.\node_modules\.bin\electron-builder.cmd --mac --publish never
+```
+
+CMD（命令提示符）：
+
+```bat
+:: Windows：NSIS 安装包 + 免安装 zip
+node_modules\.bin\electron-builder.cmd --win --publish never
+
+:: macOS
+node_modules\.bin\electron-builder.cmd --mac --publish never
+```
+
+说明：`set` 只对当前 CMD 窗口生效，关闭窗口后失效；如需永久生效可用 `setx`（需重开窗口）。
+
+Windows 下也可以直接双击运行仓库根目录的 `build-win.cmd`：脚本会自动设置环境变量、按需安装依赖并执行打包，完成后在 `dist/` 输出安装包。
+
+产物位于 `dist/`：
+
+- `M3U8-Downloader-win_x64-<version>.exe`：NSIS 安装包
+- `M3U8-Downloader-win_x64-<version>.zip`：免安装压缩包
+- `win-unpacked/`：解包后的程序目录，可直接运行调试
+
+注意事项：
+
+- 不要直接执行 `yarn pack-win` / `yarn pack-mac`：`package.json` 中这两个脚本带 `--publish always`，会尝试发布到 GitHub Release，需要配置 `GH_TOKEN`；使用 `--publish never` 只构建、不发布。
+- 打包前请关闭正在从 `dist/win-unpacked` 运行的程序，否则 electron-builder 无法覆盖被占用的文件（`build-win.cmd` 会自动检测并提示）。
+- 若构建报 `spawn UNKNOWN`（通常发生在生成 NSIS 卸载程序阶段），说明当前终端/沙箱限制了执行新生成的临时安装器，请在普通 PowerShell 窗口（非受限沙箱）中重试。
 
 ### Enjoy it
 

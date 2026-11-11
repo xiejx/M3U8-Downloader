@@ -827,6 +827,144 @@ body,
     background-color: #00000000;
 }
 
+/* 任务列表中的分片统计 */
+.heisir .main .TaskList .item .filestat {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: .85rem;
+    color: #656565;
+    margin-top: 4px;
+}
+
+.heisir .main .TaskList .item .filestat > span {
+    margin-right: 14px;
+    white-space: nowrap;
+}
+
+.heisir .main .TaskList .item .filestat .ok {
+    color: #67c23a;
+}
+
+.heisir .main .TaskList .item .filestat .fail {
+    color: #f56c6c;
+}
+
+.heisir .main .TaskList .item .filestat .total {
+    color: #909399;
+}
+
+.heisir .main .TaskList .item .filestat .detailbtn {
+    padding: 0;
+    height: auto;
+    font-size: .85rem;
+    color: #409eff;
+}
+
+/* 任务详情弹窗 */
+.task-detail {
+    color: #aeaeae;
+    padding: 4px 0 12px 0;
+}
+
+.task-detail .detail-name {
+    font-size: 1rem;
+    color: #cdcdcd;
+    margin-bottom: 12px;
+    word-break: break-all;
+}
+
+.task-detail .detail-summary {
+    display: flex;
+    flex-wrap: wrap;
+    font-size: .9rem;
+    margin-bottom: 12px;
+}
+
+.task-detail .detail-summary > span {
+    margin-right: 20px;
+    white-space: nowrap;
+}
+
+.task-detail .detail-summary .ok b {
+    color: #67c23a;
+}
+
+.task-detail .detail-summary .fail b {
+    color: #f56c6c;
+}
+
+.task-detail .detail-summary .downloading b {
+    color: #409eff;
+}
+
+.task-detail .detail-summary .pending b {
+    color: #909399;
+}
+
+.task-detail .detail-summary .total b {
+    color: #cdcdcd;
+}
+
+.task-detail .detail-legend {
+    display: flex;
+    align-items: center;
+    font-size: .8rem;
+    color: #909399;
+    margin-bottom: 10px;
+}
+
+.task-detail .cell {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    display: inline-block;
+    flex: none;
+}
+
+.task-detail .detail-legend .cell {
+    margin: 0 4px 0 16px;
+}
+
+.task-detail .detail-legend .cell:first-child {
+    margin-left: 0;
+}
+
+.task-detail .detail-matrix {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 12px);
+    gap: 3px;
+    max-height: 45vh;
+    overflow-y: auto;
+    padding: 4px;
+    border: solid 1px #2a2a2a;
+    border-radius: 4px;
+}
+
+.task-detail .s0 {
+    background: #3a3a3a;
+}
+
+.task-detail .s1 {
+    background: #409eff;
+    animation: task-detail-pulse 1s ease-in-out infinite;
+}
+
+.task-detail .s2 {
+    background: #67c23a;
+}
+
+.task-detail .s3 {
+    background: #f56c6c;
+}
+
+@keyframes task-detail-pulse {
+    0% { opacity: 1; }
+    50% { opacity: .35; }
+    100% { opacity: 1; }
+}
+
 .heisir .vcomment {
     overflow: auto !important;
     padding-left: 50px !important;

@@ -259,6 +259,8 @@ function createWindow() {
             config_save_dir: pathDownloadDir,
             config_ffmpeg: ffmpegPath,
             config_proxy: nconf.get('config_proxy'),
+            config_downloadConcurrency: getDownloadConcurrency(),
+            config_downloadMaxRetries: getDownloadMaxRetries(),
             config_tags: tags,
             config_categories: categories,
             config_taskTag: nconf.get('taskTag') || '',
@@ -683,6 +685,11 @@ app.on('window-all-closed', async () => {
     };
 })
 
+// 退出前把节流器里尚未落盘的任务数据立即写入，避免丢失最后 1 秒内的统计更新
+app.on('before-quit', () => {
+    saveDBdisk();
+})
+
 app.on('activate', () => {
     // 在 macOS 上，当单击 Dock 图标并且没有其他窗口打开时，
     // 通常在应用程序中重新创建一个窗口。
@@ -990,20 +997,25 @@ class QueueObject {
         this.id = 0;
         this.idx = 0;
         this.dir = '';
+        // 本次运行的代号：stop/重新 start 之后，旧队列的项会因代号不匹配而自行退出
+        this.runToken = 0;
+        this.onStatus = null;
         this.then = this.catch = null;
     }
     async callback(_callback) {
         try {
-            if (!taskRuntime.isActive(this.id)) {
+            if (!taskRuntime.isRunActive(this.id, this.runToken)) {
                 // logger.debug(`globalTaskStatusDic[${this.id}] is not exsited.`);
                 return;
             }
 
+            this.onStatus && this.onStatus(this.idx, SEG_DOWNLOADING);
+
             let segment = this.segment;
             let uri_ts = resolveMediaUri(this.url, this.url_prefix, segment.uri);
             if (!uri_ts) {
-                taskRuntime.stop(this.id);
                 this.catch && this.catch();
+                taskRuntime.stop(this.id);
                 return;
             }
 
@@ -1034,8 +1046,14 @@ class QueueObject {
                         timeout: httpTimeout,
                         headers: that.headers,
                         agent: proxy_agent
-                    }, this.id, 10);
-                    if (result.canceled) return;
+                    }, this.id, getDownloadMaxRetries(), () => taskRuntime.isRunActive(this.id, this.runToken));
+                    if (result.canceled) {
+                        // 任务被停止时把蓝块还原为“待下载”；若已被新的运行接管则不要动状态
+                        if (!taskRuntime.isActive(this.id) || taskRuntime.isRunActive(this.id, this.runToken)) {
+                            this.onStatus && this.onStatus(this.idx, SEG_PENDING);
+                        }
+                        return;
+                    }
                     if (!result.ok) break;
                 }
                 if (!fs.existsSync(filpath_dl)) continue;
@@ -1048,8 +1066,8 @@ class QueueObject {
                     if (!this.myKeyIV && !fs.existsSync(aes_path)) {
                         let key_uri = resolveKeyUri(this.url, this.url_prefix, segment.key.uri);
                         if (!key_uri) {
-                            taskRuntime.stop(this.id);
                             this.catch && this.catch();
+                            taskRuntime.stop(this.id);
                             return;
                         }
 
@@ -1059,10 +1077,10 @@ class QueueObject {
                                 headers: that.headers,
                                 timeout: httpTimeout,
                                 agent: proxy_agent
-                            }, this.id, 10);
+                            }, this.id, getDownloadMaxRetries(), () => taskRuntime.isRunActive(this.id, this.runToken));
                             if (!keyResult.ok) {
-                                taskRuntime.stop(this.id);
                                 this.catch && this.catch();
+                                taskRuntime.stop(this.id);
                                 return;
                             }
                         } else if (/^file:\/\/\//.test(key_uri)) {
@@ -1070,8 +1088,8 @@ class QueueObject {
                             if (fs.existsSync(key_uri)) {
                                 fs.copyFileSync(key_uri, aes_path);
                             } else {
-                                taskRuntime.stop(this.id);
                                 this.catch && this.catch();
+                                taskRuntime.stop(this.id);
                                 return;
                             }
                         }
@@ -1140,7 +1158,12 @@ function queue_callback(that, callback) {
 
 function getDownloadConcurrency() {
     const value = Number.parseInt(nconf.get('downloadConcurrency') || nconf.get('config_downloadConcurrency') || 3);
-    return Number.isFinite(value) && value > 0 ? value : 3;
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 32) : 3;
+}
+
+function getDownloadMaxRetries() {
+    const value = Number.parseInt(nconf.get('downloadMaxRetries') || nconf.get('config_downloadMaxRetries') || 10);
+    return Number.isFinite(value) && value > 0 ? Math.min(value, 100) : 10;
 }
 
 function countExistingSegments(dir, total) {
@@ -1150,6 +1173,71 @@ function countExistingSegments(dir, total) {
         if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) count++;
     }
     return count;
+}
+
+// 分片状态：0=待下载 1=下载中 2=成功 3=失败
+const SEG_PENDING = 0;
+const SEG_DOWNLOADING = 1;
+const SEG_DONE = 2;
+const SEG_FAILED = 3;
+// id => 分片状态数组，仅保存在内存中，避免写入任务数据库
+const taskSegments = new Map();
+let detailTaskId = null;
+
+function buildSegmentsFromDisk(dir, total) {
+    const statuses = new Array(total).fill(SEG_PENDING);
+    for (let i = 0; i < total; i++) {
+        const filepath = path.join(dir, `${((i + 1) + '').padStart(6, '0')}.ts`);
+        try {
+            if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) statuses[i] = SEG_DONE;
+        } catch (_) { }
+    }
+    return statuses;
+}
+
+function initTaskSegments(id, total, dir, failedIndexes) {
+    const statuses = buildSegmentsFromDisk(dir, total);
+    // 还原上次运行中彻底失败的分片，重启后详情里仍显示“失败”而不是“待下载”
+    (failedIndexes || []).forEach(idx => {
+        if (Number.isInteger(idx) && idx >= 0 && idx < total && statuses[idx] !== SEG_DONE) {
+            statuses[idx] = SEG_FAILED;
+        }
+    });
+    taskSegments.set(id, statuses);
+    return statuses;
+}
+
+function setTaskSegmentStatus(id, idx, status) {
+    const statuses = taskSegments.get(id);
+    if (!statuses || idx == null || idx < 0 || idx >= statuses.length) return;
+    if (statuses[idx] === status) return;
+    // 已有分片文件（续传）不需要再回到“下载中”
+    if (statuses[idx] === SEG_DONE && status === SEG_DOWNLOADING) return;
+    statuses[idx] = status;
+    if (detailTaskId != null && detailTaskId == id && mainWindow) {
+        mainWindow.webContents.send('task-detail-update', { id: id, changes: [[idx, status]] });
+    }
+}
+
+function applySegmentStats(video) {
+    const statuses = taskSegments.get(video.id) || [];
+    const stats = { total: statuses.length, succeeded: 0, failed: 0, downloading: 0 };
+    const failedIndexes = [];
+    for (let i = 0; i < statuses.length; i++) {
+        if (statuses[i] === SEG_DONE) stats.succeeded++;
+        else if (statuses[i] === SEG_FAILED) {
+            stats.failed++;
+            failedIndexes.push(i);
+        }
+        else if (statuses[i] === SEG_DOWNLOADING) stats.downloading++;
+    }
+    video.segment_succeeded = stats.succeeded;
+    video.segment_failed = stats.failed;
+    video.segment_downloading = stats.downloading;
+    video.segment_stats_total = stats.total;
+    // 失败分片索引随任务一起落库，重启后可以还原失败状态
+    video.segment_failed_indexes = failedIndexes;
+    return stats;
 }
 
 async function findFileByExt(dir, ext, retries = 20, interval = 500) {
@@ -1177,7 +1265,13 @@ function isDirectMediaUrl(url) {
 function saveVideoData(video) {
     const idx = videoDatas.findIndex(k => k.id == video.id);
     if (idx >= 0) {
-        videoDatas.splice(idx, 1, { ...videoDatas[idx], ...video });
+        // 兼容旧版本库里多出来的字段，同时让 videoDatas 持有本次运行的 video 对象，
+        // 这样后续分片统计（segment_succeeded/segment_failed）的更新才能被 saveDBdisk 落库
+        const old = videoDatas[idx];
+        Object.keys(old).forEach(key => {
+            if (video[key] === undefined) video[key] = old[key];
+        });
+        videoDatas.splice(idx, 1, video);
     } else {
         videoDatas.splice(0, 0, video);
     }
@@ -1216,10 +1310,18 @@ async function startDownloadMediaFile(object) {
         videopath: ''
     };
 
-    taskRuntime.start(id);
+    const prevFailedIndexes = (videoDatas.find(k => k.id == id) || {}).segment_failed_indexes;
+    const runToken = taskRuntime.start(id);
+    initTaskSegments(id, 1, dir, prevFailedIndexes);
+    setTaskSegmentStatus(id, 0, SEG_DOWNLOADING);
+    applySegmentStats(video);
     if (!videoDatas.some(k => k.id == id)) {
         videoDatas.splice(0, 0, video);
         mainWindow && mainWindow.webContents.send('task-notify-create', video);
+        saveDBdisk();
+    } else {
+        // 重新开始的旧任务：让 videoDatas 指向本次运行的对象，统计/状态才能正确落库
+        saveVideoData(video);
         saveDBdisk();
     }
 
@@ -1227,7 +1329,8 @@ async function startDownloadMediaFile(object) {
         timeout: httpTimeout,
         headers: object.headers,
         agent: proxy_agent
-    }, id, 10, progress => {
+    }, id, getDownloadMaxRetries(), progress => {
+        if (!taskRuntime.isRunActive(id, runToken)) return;
         const total = progress.total || 0;
         const transferred = progress.transferred || 0;
         const percent = total > 0 ? Math.min(100, Math.floor((transferred / total) * 100)) : 0;
@@ -1238,16 +1341,26 @@ async function startDownloadMediaFile(object) {
             ? i18n.t('task.downloading', { count_downloaded: fileLengthFormat(transferred, 1), count_seg: fileLengthFormat(total, 1), percent: `${percent}%` })
             : i18n.t('task.downloading', { count_downloaded: fileLengthFormat(transferred, 1), count_seg: '--', percent: percentFormat(0, 1) });
         mainWindow && mainWindow.webContents.send('task-notify-update', video);
-    });
+    }, () => taskRuntime.isRunActive(id, runToken));
 
     if (result.canceled) {
-        taskRuntime.stop(id);
-        saveVideoData(video);
-        saveDBdisk();
+        // 被停止时把状态还原；若已被新的运行接管则不要动状态
+        if (!taskRuntime.isActive(id) || taskRuntime.isRunActive(id, runToken)) {
+            setTaskSegmentStatus(id, 0, SEG_PENDING);
+            applySegmentStats(video);
+            taskRuntime.stop(id);
+            saveVideoData(video);
+            saveDBdisk();
+        }
         return;
     }
 
+    // 旧的运行实例已被新的运行接管，不要再写任务状态
+    if (!taskRuntime.isRunActive(id, runToken)) return;
+
     if (result.ok && fs.existsSync(tmpPath)) {
+        setTaskSegmentStatus(id, 0, SEG_DONE);
+        applySegmentStats(video);
         if (fs.existsSync(outPath)) safeUnlink(outPath);
         fs.renameSync(tmpPath, outPath);
         video.segment_downloaded = video.segment_total || 1;
@@ -1268,6 +1381,8 @@ async function startDownloadMediaFile(object) {
         }
         safeRemoveDir(dir);
     } else {
+        setTaskSegmentStatus(id, 0, SEG_FAILED);
+        applySegmentStats(video);
         video.success = false;
         video.status = taskStatus.downloadFaild;
         video.statusText = i18n.t('task.downloadFaild');
@@ -1333,7 +1448,10 @@ async function startDownload(object, iidx) {
         }
     }
 
-    if (url_audio) startDownloadAudio(object, iidx);
+    // 本次运行的唯一代号：旧的队列/重试循环在 stop 或新一次 start 之后会失效并自行退出
+    const runToken = taskRuntime.start(id);
+
+    if (url_audio) startDownloadAudio(object, iidx, runToken);
 
     // 启用下载队列。
     var tsQueues = async.queue(queue_callback, getDownloadConcurrency());
@@ -1362,7 +1480,6 @@ async function startDownload(object, iidx) {
         videopath: ''
     };
 
-    taskRuntime.start(id);
     let segments = parser.manifest.segments;
     if (segments[0].map && segments[0].map.uri) {
         // init.mp4 for HLS
@@ -1373,6 +1490,10 @@ async function startDownload(object, iidx) {
         count_seg = segments.length;
     }
 
+    const prevFailedIndexes = (videoDatas.find(k => k.id == id) || {}).segment_failed_indexes;
+    initTaskSegments(id, segments.length, dir, prevFailedIndexes);
+    applySegmentStats(video);
+
     if (!object.id) {
         mainWindow && mainWindow.webContents.send('task-notify-create', video);
     }
@@ -1380,10 +1501,15 @@ async function startDownload(object, iidx) {
     if (!videoDatas.some(k => k.id == video.id)) {
         videoDatas.splice(0, 0, video);
         saveDBdisk()
+    } else {
+        // 重新开始的旧任务：让 videoDatas 指向本次运行的对象，统计/状态才能正确落库
+        saveVideoData(video);
+        saveDBdisk();
     }
 
     for (let iSeg = 0; iSeg < segments.length; iSeg++) {
         let qo = new QueueObject();
+        qo.runToken = runToken;
         qo.dir = dir;
         qo.idx = iSeg;
         qo.id = id;
@@ -1392,36 +1518,61 @@ async function startDownload(object, iidx) {
         qo.headers = headers;
         qo.myKeyIV = myKeyIV;
         qo.segment = segments[iSeg];
+        qo.onStatus = function (idx, status) {
+            setTaskSegmentStatus(id, idx, status);
+        };
         qo.then = function () {
+            if (!taskRuntime.isRunActive(this.id, this.runToken)) return;
+            setTaskSegmentStatus(id, this.idx, SEG_DONE);
             count_downloaded = count_downloaded + 1
             video.segment_downloaded = count_downloaded;
+            applySegmentStats(video);
+            // 失败后仍会继续下载剩余分片，状态保持“下载中”，失败数量由统计展示
             video.status = taskStatus.downloading;
             video.statusText = i18n.t('task.downloading', {
                 count_downloaded, // 下载中
                 count_seg,
                 percent: percentFormat(count_downloaded, count_seg)
             });
-            if (video.success) {
-                mainWindow.webContents.send('task-notify-update', video);
-            }
+            // 失败后仍继续下载剩余分片，需要持续刷新成功/失败计数
+            mainWindow.webContents.send('task-notify-update', video);
+            scheduleSaveDBdisk();
         };
         qo.catch = function () {
-            taskRuntime.stop(id);
+            if (!taskRuntime.isRunActive(this.id, this.runToken)) return;
+            // 单个分片多次重试仍失败：先记录失败，等整个队列跑完再统一判定任务结果
+            setTaskSegmentStatus(id, this.idx, SEG_FAILED);
             video.success = false;
+            applySegmentStats(video);
 
             logger.info(`URL:${video.url} | ${this.segment.uri} download failed`);
-            video.status = taskStatus.failedMultipleTimes
-            video.statusText = i18n.t('task.failedMultipleTimes')
-            mainWindow.webContents.send('task-notify-end', video);
-
-            saveDBdisk()
+            mainWindow.webContents.send('task-notify-update', video);
+            // 每个分片彻底失败后都落库，否则重启后失败计数会偏小
+            scheduleSaveDBdisk();
         }
         tsQueues.push(qo);
     }
     tsQueues.drain(async () => {
-        if (!video.success) return;
+        if (!taskRuntime.isRunActive(id, runToken)) return;
+        if (!video.success) {
+            // 队列已全部结束但仍有失败分片：进入稳定的失败状态，避免界面一直显示“下载中”
+            video.status = taskStatus.failedMultipleTimes;
+            video.statusText = i18n.t('task.failedMultipleTimes');
+            taskRuntime.stop(id);
+            mainWindow.webContents.send('task-notify-end', video);
+            saveDBdisk();
+            return;
+        }
         video.segment_downloaded = countExistingSegments(dir, video.segment_total);
-        if (video.segment_downloaded != video.segment_total) return;
+        if (video.segment_downloaded != video.segment_total) {
+            // 队列结束但分片文件不完整（例如解密异常）：同样收敛到失败状态
+            video.status = taskStatus.failedMultipleTimes;
+            video.statusText = i18n.t('task.failedMultipleTimes');
+            taskRuntime.stop(id);
+            mainWindow.webContents.send('task-notify-end', video);
+            saveDBdisk();
+            return;
+        }
 
         logger.info(`Download vidoe ok! ${id}`);
 
@@ -1436,8 +1587,10 @@ async function startDownload(object, iidx) {
         if (!fileSegments.length) {
             video.status = taskStatus.downloadFaild;
             video.statusText = i18n.t('task.downloadFaild'); // 下载失败，请检查链接有效性
+            taskRuntime.stop(id);
             mainWindow.webContents.send('task-notify-end', video);
             logger.error(`[${url}] download failed, please check URL validity`);
+            saveDBdisk();
             return;
         }
         let outPathMP4 = path.join(dir, Date.now() + ".mp4");
@@ -1458,6 +1611,7 @@ async function startDownload(object, iidx) {
                     video.videopath = "";
                     video.status = taskStatus.mergeFaild;
                     video.statusText = i18n.t('task.mergeFaild') // 合并出错，请尝试手动合并
+                    taskRuntime.stop(id);
                     mainWindow.webContents.send('task-notify-end', video);
 
                     saveDBdisk()
@@ -1512,6 +1666,7 @@ async function startDownload(object, iidx) {
                                         video.statusText = i18n.t('task.done') // 已完成
 
                                         video.webContents = i18n.t('task.done')
+                                        taskRuntime.stop(id);
                                         mainWindow.webContents.send('task-notify-end', video);
 
                                         saveDBdisk();
@@ -1519,12 +1674,20 @@ async function startDownload(object, iidx) {
 
                                     })
                                     .on('error', (err) => {
-                                        console.error('merge (mp4 + m4a) error:', err.message);
+                                        logger.error('merge (mp4 + m4a) error: ' + (err && err.message));
+                                        // 音视频二次合并失败时也要结束“合并中”，否则界面会一直转圈
+                                        video.videopath = outPathMP4;
+                                        video.status = taskStatus.mergeFaild;
+                                        video.statusText = i18n.t('task.mergeFaild');
+                                        taskRuntime.stop(id);
+                                        mainWindow.webContents.send('task-notify-end', video);
+                                        saveDBdisk();
                                     })
                             } else {
                                 video.videopath = outPathMP4;
                                 video.status = taskStatus.mergeFaild;
                                 video.statusText = i18n.t('task.mergeFaild')
+                                taskRuntime.stop(id);
                                 mainWindow.webContents.send('task-notify-end', video);
                                 logger.error(`audio m4a not found, dir=${video.dir}`);
                                 saveDBdisk();
@@ -1549,11 +1712,19 @@ async function startDownload(object, iidx) {
                             video.statusText = i18n.t('task.done') // 已完成
 
                             video.webContents = i18n.t('task.done')
+                            taskRuntime.stop(id);
                             mainWindow.webContents.send('task-notify-end', video);
 
                             saveDBdisk();
                             await sleep(200);
                         }
+                    } else {
+                        // 合并结束但没有生成 mp4：收敛到失败状态，避免一直显示“合并中”
+                        video.status = taskStatus.mergeFaild;
+                        video.statusText = i18n.t('task.mergeFaild');
+                        taskRuntime.stop(id);
+                        mainWindow.webContents.send('task-notify-end', video);
+                        saveDBdisk();
                     }
 
                     // ff.kill();
@@ -1594,12 +1765,14 @@ async function startDownload(object, iidx) {
             video.videopath = outPathMP4;
             video.status = taskStatus.noFFMPEG;
             video.statusText = i18n.t('task.noFFMPEG') // 已完成，未发现本地 FFMPEG，不进行合成
+            taskRuntime.stop(id);
             mainWindow.webContents.send('task-notify-end', video);
+            saveDBdisk();
         }
     });
 }
 
-async function startDownloadAudio(object, iidx) {
+async function startDownloadAudio(object, iidx, runToken) {
     let id = object.id;
     let headers = object.headers;
     let url_prefix = object.url_prefix;
@@ -1690,6 +1863,7 @@ async function startDownloadAudio(object, iidx) {
 
     for (let iSeg = 0; iSeg < segments.length; iSeg++) {
         let qo = new QueueObject();
+        qo.runToken = runToken;
         qo.dir = dir;
         qo.idx = iSeg;
         qo.id = id;
@@ -1717,6 +1891,7 @@ async function startDownloadAudio(object, iidx) {
         tsQueues.push(qo);
     }
     tsQueues.drain(async () => {
+        if (!taskRuntime.isRunActive(id, runToken)) return;
         if (!audio.success) return;
         audio.segment_downloaded = countExistingSegments(dir, audio.segment_total);
         if (audio.segment_downloaded != audio.segment_total) return;
@@ -1883,6 +2058,10 @@ async function startDownloadLive(object) {
     if (!videoDatas.some(k => k.id == video.id)) {
         videoDatas.splice(0, 0, video);
         saveDBdisk()
+    } else {
+        // 重新开始的旧任务：让 videoDatas 指向本次运行的对象，统计/状态才能正确落库
+        saveVideoData(video);
+        saveDBdisk();
     }
 
     if (!object.id) {
@@ -1891,8 +2070,8 @@ async function startDownloadLive(object) {
     let segmentSet = new Set();
     let ffmpegInputStream = null;
     let ffmpegObj = null;
-    taskRuntime.start(id);
-    while (taskRuntime.isActive(id)) {
+    const runToken = taskRuntime.start(id);
+    while (taskRuntime.isRunActive(id, runToken)) {
         try {
             const response = await got(url, {
                 headers: headers,
@@ -1920,7 +2099,7 @@ async function startDownloadLive(object) {
                     if (segmentSet.has(segment.uri)) {
                         continue;
                     }
-                    if (!taskRuntime.isActive(id)) {
+                    if (!taskRuntime.isRunActive(id, runToken)) {
                         break;
                     }
                     _videoDuration = _videoDuration + segment.duration * 1000;
@@ -1931,7 +2110,7 @@ async function startDownloadLive(object) {
                     let filpath_dl = path.join(dir, filename + ".dl");
 
                     for (let index = 0; index < 3; index++) {
-                        if (!taskRuntime.isActive(id)) {
+                        if (!taskRuntime.isRunActive(id, runToken)) {
                             break;
                         }
 
@@ -1942,7 +2121,7 @@ async function startDownloadLive(object) {
                             timeout: httpTimeout,
                             headers: headers,
                             agent: proxy_agent
-                        }, id, 10);
+                        }, id, getDownloadMaxRetries(), () => taskRuntime.isRunActive(id, runToken));
                         if (result.canceled) break;
                         if (!result.ok) continue;
                         if (fs.existsSync(filpath_dl)) {
@@ -1986,6 +2165,7 @@ async function startDownloadLive(object) {
                                     video.status = taskStatus.noFFMPEG; // 已完成，未发现本地 FFMPEG，不进行合成
                                     video.statusText = i18n.t('task.noFFMPEG'); // 已完成，未发现本地 FFMPEG，不进行合成
                                     mainWindow.webContents.send('task-notify-update', video);
+                                    saveDBdisk();
                                 }
                             }
 
@@ -2000,11 +2180,12 @@ async function startDownloadLive(object) {
                             video.status = taskStatus.downloadLiveStreaming; // 下载直播中
                             video.statusText = i18n.t('task.downloadLiveStreaming', { count_downloaded }); // 下载直播中
                             mainWindow.webContents.send('task-notify-update', video);
+                            scheduleSaveDBdisk();
                             break;
                         }
                     }
                 }
-                if (taskRuntime.isActive(id)) {
+                if (taskRuntime.isRunActive(id, runToken)) {
 
                     // 使下次下载 M3U8 时间提前 1 秒钟。
                     _videoDuration = _videoDuration - 1000;
@@ -2025,11 +2206,14 @@ async function startDownloadLive(object) {
         ffmpegInputStream.push(null);
     }
 
+    if (!taskRuntime.isRunActive(id, runToken)) return;
     if (count_downloaded <= 0) {
         video.videopath = '';
         video.status = taskStatus.downloadButFaild; // 已完成，下载失败
         video.statusText = i18n.t('task.downloadButFaild'); // 已完成，下载失败
+        taskRuntime.stop(id);
         mainWindow.webContents.send('task-notify-end', video);
+        saveDBdisk();
         return;
     }
 }
@@ -2081,12 +2265,48 @@ function formatTime(duration) {
     return hour + ":" + min + ":" + sec;
 }
 
+ipcMain.on('task-detail-open', function (event, id) {
+    detailTaskId = id;
+    let statuses = taskSegments.get(id);
+    if (!statuses) {
+        // 任务不是本次运行创建的（例如重启后），尝试按磁盘上已存在的 .ts 还原
+        const video = videoDatas.find(k => k.id == id);
+        let total = video ? (video.segment_stats_total || 0) : 0;
+        if (!total && video && video.downloadType !== 'media' && !video.isLiving) {
+            total = video.segment_total || 0;
+        }
+        total = Math.min(total, 20000); // 防止旧数据里 segment_total 是字节数时分配超大数组
+        if (video && video.dir && total > 0) {
+            statuses = buildSegmentsFromDisk(video.dir, total);
+            // 已完成的任务可能已删除 .ts 文件，此时按全部成功展示
+            if (video.status == taskStatus.done) {
+                statuses.fill(SEG_DONE);
+            } else {
+                // 还原上次运行中失败的分片，避免重启后显示成“待下载”
+                (video.segment_failed_indexes || []).forEach(idx => {
+                    if (Number.isInteger(idx) && idx >= 0 && idx < total && statuses[idx] !== SEG_DONE) {
+                        statuses[idx] = SEG_FAILED;
+                    }
+                });
+            }
+            taskSegments.set(id, statuses);
+        }
+    }
+    event.sender.send('task-detail-snapshot', { id: id, statuses: statuses || [] });
+});
+
+ipcMain.on('task-detail-close', function () {
+    detailTaskId = null;
+});
+
 ipcMain.on('delvideo', async function (event, id, delfile = false) {
     // logger.debug(`${JSON.stringify(event)}, ${id}, ${delfile}`);
     // return;
 
     taskRuntime.stop(id);
     taskRuntime.remove(id);
+    taskSegments.delete(id);
+    if (detailTaskId == id) detailTaskId = null;
 
     // logger.debug(`delete ===> ${id}, ${delfile}`);
     const idx = videoDatas?.findIndex(p => p.id == id);
@@ -2220,6 +2440,13 @@ function toggleTaskRunning(arg) {
     }
     if (taskRuntime.isActive(id)) {
         taskRuntime.stop(id)
+        const video = videoDatas.find(k => k.id == id);
+        if (video) {
+            // 停止后不会再有分片下载：状态改为“暂停”，避免界面一直显示“下载中”的转圈
+            taskState.pauseTask(video);
+            mainWindow && mainWindow.webContents.send('task-notify-update', video);
+        }
+        saveDBdisk();
         logger.info('stop downloading, id=' + arg + ', isActive=' + taskRuntime.isActive(id));
     } else {
         taskRuntime.start(id)
@@ -2571,6 +2798,19 @@ ipcMain.on(`auto-manualMerge`, function (event, dir) {
 })
 
 function saveDBdisk() {
-    // console.log('-------------------- save db --------------------')
+    if (saveDBdiskTimer) {
+        clearTimeout(saveDBdiskTimer);
+        saveDBdiskTimer = null;
+    }
     fs.writeFileSync(pathVideoDB, JSON.stringify(videoDatas));
+}
+
+let saveDBdiskTimer = null;
+// 分片成功/失败这类高频更新合并为最多每秒落盘一次，避免频繁同步写盘
+function scheduleSaveDBdisk() {
+    if (saveDBdiskTimer) return;
+    saveDBdiskTimer = setTimeout(() => {
+        saveDBdiskTimer = null;
+        saveDBdisk();
+    }, 1000);
 }

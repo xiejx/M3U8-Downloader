@@ -66,6 +66,22 @@ const en = {
             reset: 'Reset'
         }
     },
+    taskDetail: {
+        title: 'Task details',
+        buttons: {
+            detail: 'Details'
+        },
+        labels: {
+            total: 'Total',
+            succeeded: 'Success',
+            failed: 'Failed',
+            downloading: 'Downloading',
+            pending: 'Pending'
+        },
+        tips: {
+            empty: 'No segment data yet. Start the task to see download details.'
+        }
+    },
     singleDownload: {
         buttons: {
             newTask: 'New Task',
@@ -154,6 +170,12 @@ const en = {
                 label: 'HTTP Proxy',
                 holder: 'e.g. http://127.0.0.1:7890'
             },
+            concurrency: {
+                label: 'Concurrent downloads'
+            },
+            maxRetries: {
+                label: 'Max retries per file'
+            },
             language: {
                 label: 'Language',
                 holder: ''
@@ -222,16 +244,6 @@ const en = {
         github: 'Github',
         version: 'Version',
         newVersion: 'new!'
-    },
-    buyMEcoffe: {
-        title: 'Buy me a coffe',
-        content: `Development is not easy. 
-        If this app is useful to you, can you buy me a cup of coffee?
-        Thanks in advance!`,
-        button: 'Thanks for donation',
-        wechat: 'WeChat',
-        alipay: 'AliPay',
-        paypal: 'PayPal',
     },
     validateMessage: {
         notEmpty: '{name} can not be empty!',

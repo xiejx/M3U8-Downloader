@@ -35,6 +35,9 @@ const _app = new Vue({
             dlg_deltask_id: null,
             dlg_deltask_name: '',
             dlg_deltask_isDelFile: true,
+            dlg_taskdetail_visible: false,
+            dlg_taskdetail_id: null,
+            dlg_taskdetail_statuses: [],
             dlg_category_visible: false,
             dlg_category_title: '',
             dlg_category_modify_name: '',
@@ -44,6 +47,8 @@ const _app = new Vue({
             config_save_dir: '',
             config_ffmpeg: '',
             config_proxy: '',
+            config_downloadConcurrency: 3,
+            config_downloadMaxRetries: 10,
             config_language: 'en',
             config_closeAppBehavior: 0,
             config_tags: [],
@@ -77,7 +82,6 @@ const _app = new Vue({
             currentUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 Edg/114.0.1823.41",
             browserVideoUrls: [],
             platform: '',
-            dlg_buymecoffe_visible: false,
             pager_pageSize: 20,
             pager_currPage: 1,
             pager_totalCount: 0,
@@ -245,6 +249,22 @@ const _app = new Vue({
                 }
             });
 
+            ipcRenderer.on('task-detail-snapshot', function (event, data) {
+                if (!that.dlg_taskdetail_visible || data.id != that.dlg_taskdetail_id) return;
+                that.dlg_taskdetail_statuses = data.statuses || [];
+            });
+
+            ipcRenderer.on('task-detail-update', function (event, data) {
+                if (!that.dlg_taskdetail_visible || data.id != that.dlg_taskdetail_id) return;
+                const changes = data.changes || [];
+                for (let i = 0; i < changes.length; i++) {
+                    const idx = changes[i][0], status = changes[i][1];
+                    if (idx >= 0 && idx < that.dlg_taskdetail_statuses.length) {
+                        Vue.set(that.dlg_taskdetail_statuses, idx, status);
+                    }
+                }
+            });
+
             ipcRenderer.on('start-merge-ts-status', function (event, msg) {
 
                 if (msg.progress != -1) that.tsMergeProgress = msg.progress;
@@ -303,6 +323,7 @@ const _app = new Vue({
         },
         message: function (_, { version, isDev, downloadSpeed,
             config_ffmpeg, config_save_dir, config_proxy, config_language, config_closeAppBehavior,
+            config_downloadConcurrency, config_downloadMaxRetries,
             videoDatas, browserVideoItem, platform, config_tags, config_taskTag, config_categories }) {
             this.isDev = isDev;
             if (version) {
@@ -314,6 +335,8 @@ const _app = new Vue({
             config_ffmpeg && (this.config_ffmpeg = config_ffmpeg);
             config_save_dir && (this.config_save_dir = config_save_dir);
             config_proxy && (this.config_proxy = config_proxy);
+            config_downloadConcurrency != null && (this.config_downloadConcurrency = config_downloadConcurrency);
+            config_downloadMaxRetries != null && (this.config_downloadMaxRetries = config_downloadMaxRetries);
             config_tags && (this.config_tags = config_tags);
             config_categories && (this.config_categories = config_categories);
 
@@ -520,6 +543,38 @@ const _app = new Vue({
             this.dlg_deltask_name = null;
             this.dlg_deltask_isDelFile = true;
         },
+        clickTaskDetail: function (o) {
+            this.dlg_taskdetail_id = o.id;
+            this.dlg_taskdetail_statuses = [];
+            this.dlg_taskdetail_visible = true;
+            ipcRenderer.send('task-detail-open', o.id);
+        },
+        clickCloseTaskDetail: function () {
+            this.dlg_taskdetail_visible = false;
+            this.dlg_taskdetail_id = null;
+            this.dlg_taskdetail_statuses = [];
+            ipcRenderer.send('task-detail-close');
+        },
+        statusLabel: function (status) {
+            switch (status) {
+                case 1: return i18n.t('taskDetail.labels.downloading');
+                case 2: return i18n.t('taskDetail.labels.succeeded');
+                case 3: return i18n.t('taskDetail.labels.failed');
+                default: return i18n.t('taskDetail.labels.pending');
+            }
+        },
+        // 只有这些状态代表任务真的在跑，其余状态（暂停/失败/无ffmpeg/直播失败等）不应显示转圈
+        isTaskRunning: function (status) {
+            return [
+                taskStatus.initializing,
+                taskStatus.checkM3U8url,
+                taskStatus.downloading,
+                taskStatus.downloadMerging,
+                taskStatus.startMerge,
+                taskStatus.merging,
+                taskStatus.downloadLiveStreaming
+            ].includes(status);
+        },
         clickOpenDir: function (e) {
             ipcRenderer.send("open-directory", -1, null);   //-1 = add new category
         },
@@ -618,6 +673,20 @@ const _app = new Vue({
         },
         proxyChange: function () {
             ipcRenderer.send('set-config', { key: 'config_proxy', value: this.config_proxy });
+        },
+        concurrencyChange: function (value) {
+            let v = Number.parseInt(value);
+            if (!Number.isFinite(v) || v < 1) v = 3;
+            v = Math.min(v, 32);
+            this.config_downloadConcurrency = v;
+            ipcRenderer.send('set-config', { key: 'config_downloadConcurrency', value: v });
+        },
+        maxRetriesChange: function (value) {
+            let v = Number.parseInt(value);
+            if (!Number.isFinite(v) || v < 1) v = 10;
+            v = Math.min(v, 100);
+            this.config_downloadMaxRetries = v;
+            ipcRenderer.send('set-config', { key: 'config_downloadMaxRetries', value: v });
         },
         languageChange: function () {
             i18n.locale = this.config_language;
@@ -769,11 +838,8 @@ const _app = new Vue({
             });
         },
         clickOpenGithub: function (e) {
-            const url = 'https://github.com/12343954/M3U8-Downloader'
+            const url = 'https://github.com/xiejx/M3U8-Downloader'
             url && shell.openExternal(url)
-        },
-        clickOpenSponsor: function (e) {
-            this.dlg_buymecoffe_visible = true
         },
         checkUpdate: function (oldVersion) {
             ipcRenderer.send('check-update')
@@ -1026,6 +1092,22 @@ const _app = new Vue({
                 default:
                     break;
             }
+        }
+    },
+    computed: {
+        dlg_taskdetail_task: function () {
+            return this.allVideos.find(k => k.id == this.dlg_taskdetail_id) || null;
+        },
+        dlg_taskdetail_stats: function () {
+            const stats = { total: this.dlg_taskdetail_statuses.length, succeeded: 0, failed: 0, downloading: 0, pending: 0 };
+            for (let i = 0; i < this.dlg_taskdetail_statuses.length; i++) {
+                const st = this.dlg_taskdetail_statuses[i];
+                if (st === 2) stats.succeeded++;
+                else if (st === 3) stats.failed++;
+                else if (st === 1) stats.downloading++;
+                else stats.pending++;
+            }
+            return stats;
         }
     },
     watch: {

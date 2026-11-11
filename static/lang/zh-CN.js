@@ -68,6 +68,22 @@ const zhCN = {
             reset: '重 置'
         }
     },
+    taskDetail: {
+        title: '任务详情',
+        buttons: {
+            detail: '详情'
+        },
+        labels: {
+            total: '总数',
+            succeeded: '成功',
+            failed: '失败',
+            downloading: '下载中',
+            pending: '等待中'
+        },
+        tips: {
+            empty: '暂无分片数据，任务启动后可查看下载详情'
+        }
+    },
     singleDownload: {
         buttons: {
             newTask: '新建下载',
@@ -156,6 +172,12 @@ const zhCN = {
                 label: 'HTTP代理',
                 holder: '请输入HTTP代理(如：http://127.0.0.1:7890 )'
             },
+            concurrency: {
+                label: '同时下载数量'
+            },
+            maxRetries: {
+                label: '单文件重试次数'
+            },
             language: {
                 label: '语言',
                 holder: ''
@@ -224,15 +246,6 @@ const zhCN = {
         github: 'Github',
         version: '版本',
         newVersion: '新版本!'
-    },
-    buyMEcoffe: {
-        title: '您的支持对我有莫大的帮助',
-        content: `开发不易，如果您觉得此款软件对您有帮助，
-        可以请小哥哥喝杯咖啡吗？我将非常感谢！`,
-        button: '感谢您的赞助',
-        wechat: '微信赞助',
-        alipay: '支付宝赞助',
-        paypal: 'PayPal赞助',
     },
     validateMessage: {
         notEmpty: '{name} 不能为空！',
