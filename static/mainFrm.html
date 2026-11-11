@@ -210,7 +210,8 @@
                                             <el-row :gutter="20">
                                                 <el-col :span="11" :offset="4">
                                                     <el-alert :title="addTaskMessage" type="info" :closable="false"
-                                                        effect="dark" style="background-color:#002404;color: #606266;">
+                                                        effect="dark"
+                                                        style="background-color: var(--el-bg-color-overlay); color: var(--el-text-color-regular);">
                                                     </el-alert>
                                                 </el-col>
                                                 <el-col :span="8" :offset="1">
@@ -577,6 +578,19 @@
                                 </el-col> -->
                             </el-row>
                             <br />
+                            <el-row :gutter="8">
+                                <el-col :span="4" :offset="1">
+                                    <span class="item-left">{{$t('settings.inputs.theme.label')}}</span>
+                                </el-col>
+                                <el-col :span="9">
+                                    <el-select v-model="config_theme" style="width: 100%;" @change="themeChange">
+                                        <el-option v-for="opt in themeOptions" :key="opt.value" :label="opt.label"
+                                            :value="opt.value">
+                                        </el-option>
+                                    </el-select>
+                                </el-col>
+                            </el-row>
+                            <br />
                             <el-row>
                                 <el-col :span="4" :offset="1">
                                     <span class="item-left">{{$t('settings.inputs.language.label')}}</span>
@@ -615,9 +629,6 @@
                                             :key="action" :label="action" :value="index">
                                         </el-option>
                                     </el-select>
-                                </el-col>
-                                <el-col :span="4">
-                                    asdf
                                 </el-col>
                                 <el-col :span="6" v-if="isDev">
                                     <el-button type="warning" @click="clickOnTest">

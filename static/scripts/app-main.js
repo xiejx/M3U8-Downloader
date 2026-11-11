@@ -49,6 +49,7 @@ const _app = new Vue({
             config_proxy: '',
             config_downloadConcurrency: 3,
             config_downloadMaxRetries: 10,
+            config_theme: 'dark',
             config_language: 'en',
             config_closeAppBehavior: 0,
             config_tags: [],
@@ -142,10 +143,30 @@ const _app = new Vue({
                 }
             ]
         };
+
+        // 跟随系统时，随系统主题实时切换
+        that.themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+        that.onThemeMediaChange = () => {
+            if (that.config_theme === 'system') that.applyTheme('system');
+        };
+        that.themeMedia.addEventListener
+            ? that.themeMedia.addEventListener('change', that.onThemeMediaChange)
+            : that.themeMedia.addListener(that.onThemeMediaChange);
     },
     methods: {
         timeBeauty: (time) => timeBeauty(time),
         clickNone: () => { },
+        applyTheme: function (source) {
+            const dark = source === 'system'
+                ? window.matchMedia('(prefers-color-scheme: dark)').matches
+                : source !== 'light';
+            document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        },
+        themeChange: function (value) {
+            this.config_theme = value;
+            this.applyTheme(value);
+            ipcRenderer.send('set-config', { key: 'theme', value });
+        },
         installEvent: function (e) {
             let that = this;
 
@@ -324,6 +345,7 @@ const _app = new Vue({
         message: function (_, { version, isDev, downloadSpeed,
             config_ffmpeg, config_save_dir, config_proxy, config_language, config_closeAppBehavior,
             config_downloadConcurrency, config_downloadMaxRetries,
+            config_theme,
             videoDatas, browserVideoItem, platform, config_tags, config_taskTag, config_categories }) {
             this.isDev = isDev;
             if (version) {
@@ -337,6 +359,10 @@ const _app = new Vue({
             config_proxy && (this.config_proxy = config_proxy);
             config_downloadConcurrency != null && (this.config_downloadConcurrency = config_downloadConcurrency);
             config_downloadMaxRetries != null && (this.config_downloadMaxRetries = config_downloadMaxRetries);
+            if (config_theme) {
+                this.config_theme = config_theme;
+                this.applyTheme(config_theme);
+            }
             config_tags && (this.config_tags = config_tags);
             config_categories && (this.config_categories = config_categories);
 
@@ -1095,6 +1121,13 @@ const _app = new Vue({
         }
     },
     computed: {
+        themeOptions: function () {
+            return [
+                { value: 'dark', label: this.$t('settings.dropdown.theme.dark') },
+                { value: 'light', label: this.$t('settings.dropdown.theme.light') },
+                { value: 'system', label: this.$t('settings.dropdown.theme.system') }
+            ];
+        },
         dlg_taskdetail_task: function () {
             return this.allVideos.find(k => k.id == this.dlg_taskdetail_id) || null;
         },

@@ -10,7 +10,8 @@ const {
     dialog,
     screen,
     session,
-    nativeImage
+    nativeImage,
+    nativeTheme
 } = require('electron');
 const isDev = require('electron-is-dev');
 const util = require('util');
@@ -205,6 +206,7 @@ function createWindow() {
         icon: path.join(__dirname, 'static', 'icon', 'logo.png'),
         alwaysOnTop: false,
         hasShadow: false,
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#f5f6f7',
         title: `${AppTitle}`,// ${package_self.version}
         show: false,
     });
@@ -261,6 +263,7 @@ function createWindow() {
             config_proxy: nconf.get('config_proxy'),
             config_downloadConcurrency: getDownloadConcurrency(),
             config_downloadMaxRetries: getDownloadMaxRetries(),
+            config_theme: getThemeSource(),
             config_tags: tags,
             config_categories: categories,
             config_taskTag: nconf.get('taskTag') || '',
@@ -425,6 +428,9 @@ app.on('ready', () => {
             app.quit();
         }
     });
+
+    // 让窗口边框、原生控件跟随主题设置
+    applyThemeSource(getThemeSource());
 
     createWindow();
 
@@ -1164,6 +1170,19 @@ function getDownloadConcurrency() {
 function getDownloadMaxRetries() {
     const value = Number.parseInt(nconf.get('downloadMaxRetries') || nconf.get('config_downloadMaxRetries') || 10);
     return Number.isFinite(value) && value > 0 ? Math.min(value, 100) : 10;
+}
+
+// 主题：dark | light | system，默认保持深色
+const themeSources = ['dark', 'light', 'system'];
+function getThemeSource() {
+    const value = nconf.get('theme');
+    return themeSources.includes(value) ? value : 'dark';
+}
+
+function applyThemeSource(value) {
+    const source = themeSources.includes(value) ? value : 'dark';
+    nativeTheme.themeSource = source;
+    return source;
 }
 
 function countExistingSegments(dir, total) {
@@ -2505,6 +2524,8 @@ ipcMain.on('set-config', function (event, data) {
         i18n.setLocale(data.value)
         updateContextMenu();
         // logger.debug(`${i18n.getLocale()} = ${i18n.t('message.hello')}`);
+    } else if (data.key == 'theme') {
+        applyThemeSource(data.value);
     }
 })
 

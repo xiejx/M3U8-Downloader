@@ -178,12 +178,20 @@ const zhCN = {
             maxRetries: {
                 label: '单文件重试次数'
             },
+            theme: {
+                label: '主题'
+            },
             language: {
                 label: '语言',
                 holder: ''
             }
         },
         dropdown: {
+            theme: {
+                dark: '深色',
+                light: '浅色',
+                system: '跟随系统'
+            },
             closeBtn: [
                 '最小化到系统托盘',
                 '直接退出'

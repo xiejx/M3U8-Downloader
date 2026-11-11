@@ -176,12 +176,20 @@ const en = {
             maxRetries: {
                 label: 'Max retries per file'
             },
+            theme: {
+                label: 'Theme'
+            },
             language: {
                 label: 'Language',
                 holder: ''
             }
         },
         dropdown: {
+            theme: {
+                dark: 'Dark',
+                light: 'Light',
+                system: 'Follow system'
+            },
             closeBtn: [
                 'Minimize to system tray',
                 'Exit directly'
