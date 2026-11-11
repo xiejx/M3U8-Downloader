@@ -1,4 +1,7 @@
 const en = {
+    app: {
+        title: 'M3U8 Downloader'
+    },
     sidebar: {
         download: 'Download',
         settings: 'Settings'
@@ -148,6 +151,12 @@ const en = {
         }
     },
     settings: {
+        sections: {
+            savePath: 'Save location',
+            download: 'Download',
+            appearance: 'Appearance',
+            behavior: 'Behavior'
+        },
         buttons: {
             browser: 'Select',
             viewLog: 'View Logs',

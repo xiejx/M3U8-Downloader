@@ -21,7 +21,7 @@ const _app = new Vue({
             version: '',
             newVersion: '',
             newVersion_download_url: 'https://github.com/12343954/M3U8-Downloader/releases',
-            languages: [{ lang: 'English', value: 'en' }, { lang: 'Chinese', value: 'zh-cn' }],
+            languages: [{ lang: 'English', value: 'en' }, { lang: '中文', value: 'zh-cn' }],
             m3u8_url: '',
             m3u8_urls: '',
             m3u8_audio_url: '',

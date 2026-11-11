@@ -20,7 +20,7 @@
                 <el-header v-if="platform != 'darwin'" class="header" height='40px'>
                     <el-row>
                         <el-col :span="14">
-                            <div class="title">{{'M3U8 Downloader'}}</div>
+                            <div class="title">{{$t('app.title')}}</div>
                         </el-col>
                     </el-row>
 
@@ -424,230 +424,140 @@
                                 </el-col>
                             </el-row>
                             <br />
-                            <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">
-                                        {{$t('settings.inputs.saveFolder.label')}}
-                                    </span>
-                                </el-col>
-                                <el-col :span="18">
-                                    <el-row v-for="(category, index) in config_categories" :key="category.tag">
-                                        <el-col :span="20">
-                                            <el-input :readonly="true" :value="category.dir" class="task-category"
-                                                :type="category.star?'password':'text'"
-                                                :placeholder="$t('settings.inputs.saveFolder.holder')">
-                                                <template slot="prepend" class="el-tag--success el-tag--dar">
-                                                    <el-button
-                                                        @click="clickCategoryModify(category)">{{category.tag}}</el-button>
-                                                </template>
-                                                <template slot="append">
-                                                    <el-dropdown split-button type="primary"
-                                                        @click="clickCategorySelect(index)"
-                                                        @command="clickCategoryOption">
-                                                        {{$t('settings.buttons.browser')}}
-                                                        <template #dropdown>
-                                                            <el-dropdown-menu>
-                                                                <el-dropdown-item
-                                                                    :command="clickCategoryOptionBefore(index, category.star)"
-                                                                    style="font-size: 1.2rem; color: #a9a9a9;">
-                                                                    <i v-if="category.star"
-                                                                        class="fa-solid fa-eye-slash"></i>
-                                                                    <i v-else class="fa-regular fa-eye"></i>
-                                                                </el-dropdown-item>
-                                                                <el-dropdown-item v-if="config_categories.length > 1"
-                                                                    :command="clickCategoryOptionBefore(index, 'delete')">❌</el-dropdown-item>
-                                                            </el-dropdown-menu>
-                                                        </template>
-                                                    </el-dropdown>
-                                                </template>
-                                            </el-input>
-                                        </el-col>
-                                        <el-col v-if="index == 0" :span="4" class="text-right">
-                                            <el-button type="info"
-                                                @click="clickCategoryAddNew">{{$t('settings.inputs.tags.add')}}</el-button>
-                                        </el-col>
-                                    </el-row>
+                            <div class="settings-pane">
+                                <div class="settings-section">
+                                    <div class="settings-section-title">{{$t('settings.sections.savePath')}}</div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.saveFolder.label')}}</div>
+                                        <div class="settings-control">
+                                            <div v-for="(category, index) in config_categories" :key="category.tag"
+                                                class="settings-category-row">
+                                                <el-input :readonly="true" :value="category.dir"
+                                                    class="task-category settings-category-input"
+                                                    :type="category.star?'password':'text'"
+                                                    :placeholder="$t('settings.inputs.saveFolder.holder')">
+                                                    <template slot="prepend" class="el-tag--success el-tag--dar">
+                                                        <el-button
+                                                            @click="clickCategoryModify(category)">{{category.tag}}</el-button>
+                                                    </template>
+                                                    <template slot="append">
+                                                        <el-dropdown split-button type="primary"
+                                                            @click="clickCategorySelect(index)"
+                                                            @command="clickCategoryOption">
+                                                            {{$t('settings.buttons.browser')}}
+                                                            <template #dropdown>
+                                                                <el-dropdown-menu>
+                                                                    <el-dropdown-item
+                                                                        :command="clickCategoryOptionBefore(index, category.star)"
+                                                                        style="font-size: 1.2rem;">
+                                                                        <i v-if="category.star"
+                                                                            class="fa-solid fa-eye-slash"></i>
+                                                                        <i v-else class="fa-regular fa-eye"></i>
+                                                                    </el-dropdown-item>
+                                                                    <el-dropdown-item v-if="config_categories.length > 1"
+                                                                        :command="clickCategoryOptionBefore(index, 'delete')">❌</el-dropdown-item>
+                                                                </el-dropdown-menu>
+                                                            </template>
+                                                        </el-dropdown>
+                                                    </template>
+                                                </el-input>
+                                                <el-button v-if="index == 0" type="info" class="settings-add-btn"
+                                                    @click="clickCategoryAddNew">{{$t('settings.inputs.tags.add')}}</el-button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="settings-section">
+                                    <div class="settings-section-title">{{$t('settings.sections.download')}}</div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.concurrency.label')}}</div>
+                                        <div class="settings-control">
+                                            <el-input-number v-model="config_downloadConcurrency" :min="1" :max="32"
+                                                :step="1" @change="concurrencyChange" class="settings-number">
+                                            </el-input-number>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.maxRetries.label')}}</div>
+                                        <div class="settings-control">
+                                            <el-input-number v-model="config_downloadMaxRetries" :min="1" :max="100"
+                                                :step="1" @change="maxRetriesChange" class="settings-number">
+                                            </el-input-number>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.proxy.label')}}</div>
+                                        <div class="settings-control">
+                                            <el-input class="settings-text"
+                                                :placeholder="$t('settings.inputs.proxy.holder')" v-model="config_proxy"
+                                                @change="proxyChange"></el-input>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.log.label')}}</div>
+                                        <div class="settings-control settings-control-inline">
+                                            <el-button class="mybutton" type="info" icon="el-icon-view"
+                                                @click="clickOpenLogDir">{{$t('settings.buttons.viewLog')}}</el-button>
+                                        </div>
+                                    </div>
+                                </div>
 
-                                </el-col>
-                            </el-row>
-                            <br />
-                            <el-row v-if="false" :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">
-                                        {{$t('settings.inputs.tags.label')}}
-                                    </span>
-                                </el-col>
-                                <el-col :span="18">
-                                    <div>
-                                        <el-tag v-for="tag in config_tags" :key="tag" class="mx-1" closable size="large"
-                                            effect="dark" type="success" :disable-transitions="false"
-                                            @close="handleTagClose(tag)">
-                                            {{ tag }}
-                                        </el-tag>
-                                        <el-button v-if="!input_tag_visible && config_tags?.length < 5" size="small"
-                                            type="info" @click="showTagInput">
-                                            {{$t('settings.inputs.tags.add')}}
-                                        </el-button>
-                                        <el-input v-if="input_tag_visible" ref="refInputTag" class="ml-1 w-20"
-                                            style="width: 8rem;" size="large" v-model="input_tag_value" max-length="50"
-                                            @keyup.enter.native="handleTagInputConfirm" @blur="handleTagInputConfirm" />
+                                <div class="settings-section">
+                                    <div class="settings-section-title">{{$t('settings.sections.appearance')}}</div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.theme.label')}}</div>
+                                        <div class="settings-control">
+                                            <el-select v-model="config_theme" class="settings-select" @change="themeChange">
+                                                <el-option v-for="opt in themeOptions" :key="opt.value" :label="opt.label"
+                                                    :value="opt.value">
+                                                </el-option>
+                                            </el-select>
+                                        </div>
                                     </div>
-                                </el-col>
-                            </el-row>
-                            <br v-if="false" />
-                            <!-- <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <el-tooltip placement="bottom-start">
-                                        <template #content> {{$t('settings.inputs.junks.tips')}} </template>
-                                        <span
-                                            style="line-height:40px;float:right;color:#ccc;">{{$t('settings.inputs.junks.label')}}</span>
-                                    </el-tooltip>
-                                </el-col>
-                                <el-col :span="18">
-                                    <div>
-                                        <el-tag v-for="ts in config_junk_ts" :key="ts" class="mx-1" closable
-                                            size="large" effect="dark" type="danger" :disable-transitions="false"
-                                            @close="handleRemoveJunkTS(ts)" @click="handlePlayJunkTS(ts)">
-                                            {{ ts }}
-                                        </el-tag>
-                                        <el-button v-if="config_junk_ts?.length < 5" size="small" type="info"
-                                            @click="clickOpenJunkTs">
-                                            {{$t('settings.inputs.junks.add')}}
-                                        </el-button>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.inputs.language.label')}}</div>
+                                        <div class="settings-control">
+                                            <el-select v-model="config_language" class="settings-select"
+                                                @change="languageChange">
+                                                <el-option v-for="lang in languages" :key="lang.lang" :label="lang.lang"
+                                                    :value="lang.value">
+                                                </el-option>
+                                            </el-select>
+                                        </div>
                                     </div>
-                                </el-col>
-                            </el-row>
-                            <br /> -->
-                            <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">
-                                        {{$t('settings.inputs.proxy.label')}}
-                                    </span>
-                                </el-col>
-                                <el-col :span="9">
-                                    <el-input :placeholder="$t('settings.inputs.proxy.holder')" v-model="config_proxy"
-                                        @change="proxyChange"></el-input>
-                                </el-col>
-                                <!-- <el-col :span="4" :offset="1">
-                                    <span
-                                        style="line-height: 40px;float: right;color: #ccc;">{{$t('settings.inputs.log.label')}}</span>
-                                </el-col>
-                                <el-col :span="4">
-                                    <el-button class="mybutton" type="primary" icon="el-icon-view"
-                                        @click="clickOpenLogDir">{{$t('settings.buttons.viewLog')}}</el-button>
-                                </el-col> -->
-                            </el-row>
-                            <br />
-                            <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">{{$t('settings.inputs.concurrency.label')}}</span>
-                                </el-col>
-                                <el-col :span="9">
-                                    <el-input-number v-model="config_downloadConcurrency" :min="1" :max="32"
-                                        :step="1" @change="concurrencyChange"
-                                        style="width: 100%;"></el-input-number>
-                                </el-col>
-                            </el-row>
-                            <br />
-                            <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">{{$t('settings.inputs.maxRetries.label')}}</span>
-                                </el-col>
-                                <el-col :span="9">
-                                    <el-input-number v-model="config_downloadMaxRetries" :min="1" :max="100"
-                                        :step="1" @change="maxRetriesChange"
-                                        style="width: 100%;"></el-input-number>
-                                </el-col>
-                            </el-row>
-                            <br />
-                            <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">{{$t('settings.inputs.log.label')}}</span>
-                                </el-col>
-                                <el-col :span="4">
-                                    <el-button class="mybutton" type="info" icon="el-icon-view"
-                                        @click="clickOpenLogDir">{{$t('settings.buttons.viewLog')}}</el-button>
-                                </el-col>
-                                <!-- <el-col :span="4" :offset="1">
-                                    <span
-                                        style="line-height: 40px;float: right;color: #ccc;">{{$t('settings.inputs.proxy.label')}}</span>
-                                </el-col>
-                                <el-col :span="9">
-                                    <el-input :placeholder="$t('settings.inputs.proxy.holder')" v-model="config_proxy"
-                                        @change="proxyChange"></el-input>
-                                </el-col> -->
-                            </el-row>
-                            <br />
-                            <el-row :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">{{$t('settings.inputs.theme.label')}}</span>
-                                </el-col>
-                                <el-col :span="9">
-                                    <el-select v-model="config_theme" style="width: 100%;" @change="themeChange">
-                                        <el-option v-for="opt in themeOptions" :key="opt.value" :label="opt.label"
-                                            :value="opt.value">
-                                        </el-option>
-                                    </el-select>
-                                </el-col>
-                            </el-row>
-                            <br />
-                            <el-row>
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">{{$t('settings.inputs.language.label')}}</span>
-                                </el-col>
-                                <el-col :span="4">
-                                    <el-select v-model="config_language" style="width: 100%;" @change="languageChange">
-                                        <el-option v-for="lang in languages" :key="lang.lang" :label="lang.lang"
-                                            :value="lang.value">
-                                        </el-option>
-                                    </el-select>
-                                </el-col>
-                                <el-col :span="4" :offset="1">
-                                    <!-- <span
-                                        style="line-height: 40px;float: right;color: #909399;">{{$t('about.version')}}</span> -->
-                                </el-col>
-                                <el-col :span="9">
-                                    <span style="line-height:34px;margin-left:1rem;">
-                                        <!-- <el-link type="info" target="_blank" :underline="false"
-                                            :href="newVersion_download_url">v{{version == newVersion ? version :
-                                            newVersion}}<sup
-                                                style="color: #ff2929;margin-left:10px;font-size:10px;">{{version ==
-                                                newVersion? '' : $t('about.newVersion')}}</sup></el-link></span> -->
-                                </el-col>
-                            </el-row>
-                            <br />
-                            <el-row>
-                                <el-col :span="4" :offset="1">
-                                    <span class="item-left">
-                                        {{$t('settings.buttons.closeBtn')}}
-                                    </span>
-                                </el-col>
-                                <el-col :span="6">
-                                    <el-select v-model="config_closeAppBehavior" style="width: 100%;"
-                                        @change="closeAppBehaviorChange">
-                                        <el-option v-for="(action, index) in $t('settings.dropdown.closeBtn')"
-                                            :key="action" :label="action" :value="index">
-                                        </el-option>
-                                    </el-select>
-                                </el-col>
-                                <el-col :span="6" v-if="isDev">
-                                    <el-button type="warning" @click="clickOnTest">
-                                        Test function
-                                    </el-button>
-                                </el-col>
-                            </el-row>
-                            <el-row :gutter="8" style="position:fixed;bottom:2rem;width:82%;right:1rem;">
-                                <el-col :span="4" :offset="6" style="margin-right: 2rem;">
-                                    <el-button class="mybutton" type="info" icon="el-icon- fab fa-github"
-                                        style="max-width: 300px;"
+                                </div>
+
+                                <div class="settings-section">
+                                    <div class="settings-section-title">{{$t('settings.sections.behavior')}}</div>
+                                    <div class="settings-item">
+                                        <div class="settings-label">{{$t('settings.buttons.closeBtn')}}</div>
+                                        <div class="settings-control">
+                                            <el-select v-model="config_closeAppBehavior" class="settings-select"
+                                                @change="closeAppBehaviorChange">
+                                                <el-option v-for="(action, index) in $t('settings.dropdown.closeBtn')"
+                                                    :key="action" :label="action" :value="index">
+                                                </el-option>
+                                            </el-select>
+                                        </div>
+                                    </div>
+                                    <div class="settings-item" v-if="isDev">
+                                        <div class="settings-label">Dev</div>
+                                        <div class="settings-control settings-control-inline">
+                                            <el-button type="warning" @click="clickOnTest">
+                                                Test function
+                                            </el-button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-footer">
+                                    <el-button class="mybutton" type="info" icon="fa-brands fa-github"
                                         @click="clickOpenGithub">{{$t('about.github')}}</el-button>
-                                </el-col>
-                                <el-col :span="5" style="margin-right: 2rem;text-align:right;">
-                                    <span style="line-height:34px;color:#909399;">v{{version}}<sup
+                                    <span class="settings-version">v{{version}}<sup
                                             style="color: #ff2929;margin-left:10px;font-size:10px;">{{version ==
                                             newVersion? '' : $t('about.newVersion')}}</sup></span>
-                                </el-col>
-                            </el-row>
+                                </div>
+                            </div>
                         </el-tab-pane>
                     </el-tabs>
                     <el-dialog :title="dlg_category_title" :visible.sync="dlg_category_visible"

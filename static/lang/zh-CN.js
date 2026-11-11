@@ -1,4 +1,7 @@
 const zhCN = {
+    app: {
+        title: 'M3U8 下载器'
+    },
     sidebar: {
         download: '资源下载',
         settings: '软件设置'
@@ -150,6 +153,12 @@ const zhCN = {
         }
     },
     settings: {
+        sections: {
+            savePath: '保存位置',
+            download: '下载',
+            appearance: '外观',
+            behavior: '行为'
+        },
         buttons: {
             browser: '浏览',
             viewLog: '查看日志',
