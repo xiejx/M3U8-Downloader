@@ -1137,6 +1137,8 @@ class QueueObject {
                             logger.error(error)
                             if (fs.existsSync(filpath_dl))
                                 safeUnlink(filpath_dl);
+                            // 解密失败同样属于该分片失败，否则状态会永远停在“下载中”
+                            this.catch && this.catch();
                         }
                         return;
                     }
@@ -1257,6 +1259,27 @@ function applySegmentStats(video) {
     // 失败分片索引随任务一起落库，重启后可以还原失败状态
     video.segment_failed_indexes = failedIndexes;
     return stats;
+}
+
+// 队列结束后不会再有分片在下载：把残留的“下载中/待下载”按磁盘实际情况收敛，
+// 避免任务已判定失败、详情里却仍显示“下载中”
+function finalizeSegmentsAfterQueue(id, dir, video) {
+    const statuses = taskSegments.get(id);
+    if (!statuses) return;
+    for (let i = 0; i < statuses.length; i++) {
+        if (statuses[i] === SEG_DONE) continue;
+        const filepath = path.join(dir, `${((i + 1) + '').padStart(6, '0')}.ts`);
+        let done = false;
+        try {
+            done = fs.existsSync(filepath) && fs.statSync(filepath).size > 0;
+        } catch (_) { }
+        statuses[i] = done ? SEG_DONE : SEG_FAILED;
+    }
+    const stats = applySegmentStats(video);
+    video.segment_downloaded = stats.succeeded;
+    if (detailTaskId != null && detailTaskId == id && mainWindow) {
+        mainWindow.webContents.send('task-detail-snapshot', { id: id, statuses: statuses });
+    }
 }
 
 async function findFileByExt(dir, ext, retries = 20, interval = 500) {
@@ -1575,6 +1598,7 @@ async function startDownload(object, iidx) {
         if (!taskRuntime.isRunActive(id, runToken)) return;
         if (!video.success) {
             // 队列已全部结束但仍有失败分片：进入稳定的失败状态，避免界面一直显示“下载中”
+            finalizeSegmentsAfterQueue(id, dir, video);
             video.status = taskStatus.failedMultipleTimes;
             video.statusText = i18n.t('task.failedMultipleTimes');
             taskRuntime.stop(id);
@@ -1585,6 +1609,7 @@ async function startDownload(object, iidx) {
         video.segment_downloaded = countExistingSegments(dir, video.segment_total);
         if (video.segment_downloaded != video.segment_total) {
             // 队列结束但分片文件不完整（例如解密异常）：同样收敛到失败状态
+            finalizeSegmentsAfterQueue(id, dir, video);
             video.status = taskStatus.failedMultipleTimes;
             video.statusText = i18n.t('task.failedMultipleTimes');
             taskRuntime.stop(id);
