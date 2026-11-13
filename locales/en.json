@@ -17,7 +17,8 @@
             "saveFolder": "Folder Select",
             "selectM3U8": "Select a M3U8 file",
             "mergeTS": "Select TS files",
-            "selectVideo": "Select a video"
+            "selectVideo": "Select a video",
+            "selectFfmpeg": "Select ffmpeg executable"
         }
     },
     "task": {

@@ -28,8 +28,17 @@ let lang = 'en'
 let messages = {}
 
 function setLocale(locale) {
-    messages = getLocaleMessages(locale)
-    lang = locale
+    // 未设置语言时（首次启动）回退到英文，避免读取不存在的语言文件
+    let target = locale || 'en'
+    let data
+    try {
+        data = getLocaleMessages(target)
+    } catch (error) {
+        target = 'en'
+        data = getLocaleMessages(target)
+    }
+    messages = data
+    lang = target
 }
 function getLocale() {
     return lang

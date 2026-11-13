@@ -17,7 +17,8 @@
             "saveFolder": "请选择文件夹",
             "selectM3U8": "请选择一个M3U8文件",
             "mergeTS": "请选择欲合并的TS文件",
-            "selectVideo": "选择视频文件"
+            "selectVideo": "选择视频文件",
+            "selectFfmpeg": "请选择 ffmpeg 可执行文件"
         }
     },
     "task": {

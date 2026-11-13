@@ -87,7 +87,7 @@ const httpTimeout = {
 };
 
 const referer = `https://tools.heisir.cn/M3U8Soft-Client?v=${package_self.version}`;
-const github_repo = `12343954/M3U8-Downloader`
+const github_repo = `xiejx/M3U8-Downloader`
 
 function transformConfig(config) {
     const result = []
@@ -154,6 +154,11 @@ try {
     logger.error('Please correct the mistakes in your configuration file: [%s].\n' + error, configFilePath)
 }
 
+// 设置中可指定外部 ffmpeg，未配置时回退到内置的 ffmpeg-static
+function getFfmpegPath() {
+    return nconf.get('ffmpegPath') || ffmpegPath
+}
+
 
 process.on('uncaughtException', (err, origin) => {
     logger.error(`uncaughtException: ${JSON.stringify(err)} | ${JSON.stringify(origin)}`)
@@ -206,7 +211,7 @@ function createWindow() {
         icon: path.join(__dirname, 'static', 'icon', 'logo.png'),
         alwaysOnTop: false,
         hasShadow: false,
-        backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0a0a' : '#f5f6f7',
+        backgroundColor: nativeTheme.shouldUseDarkColors ? '#0b0d0f' : '#f1f0ec',
         title: `${AppTitle}`,// ${package_self.version}
         show: false,
     });
@@ -215,7 +220,12 @@ function createWindow() {
     isDev && mainWindow.openDevTools();
     mainWindow.on('closed', () => mainWindow = null);
     mainWindow.webContents.on('dom-ready', (e) => {
-        const lang = nconf.get('language')
+        let lang = nconf.get('language')
+        if (!lang) {
+            lang = 'en'
+            nconf.set('language', lang)
+            nconf.save()
+        }
         i18n.setLocale(lang);
         updateContextMenu();
         // logger.info(`${lang} = ${i18n.t('message.hello')}`)
@@ -259,7 +269,7 @@ function createWindow() {
         e.sender.send('message', {
             version: package_self.version,
             config_save_dir: pathDownloadDir,
-            config_ffmpeg: ffmpegPath,
+            config_ffmpeg: getFfmpegPath(),
             config_proxy: nconf.get('config_proxy'),
             config_downloadConcurrency: getDownloadConcurrency(),
             config_downloadMaxRetries: getDownloadMaxRetries(),
@@ -347,6 +357,19 @@ function str2float(v) {
 }
 
 let _updateInterval;
+// 仅当远程版本严格高于当前版本时才视为有新版本
+function isNewerVersion(remote, current) {
+    const parse = v => String(v || '').trim().replace(/^v/i, '').split('-')[0].split('.').map(n => parseInt(n, 10) || 0)
+    const r = parse(remote)
+    const c = parse(current)
+    for (let i = 0; i < Math.max(r.length, c.length); i++) {
+        const a = r[i] || 0
+        const b = c[i] || 0
+        if (a !== b) return a > b
+    }
+    return false
+}
+
 async function checkUpdate() {
     const {
         body
@@ -1639,10 +1662,10 @@ async function startDownload(object, iidx) {
         }
         let outPathMP4 = path.join(dir, Date.now() + ".mp4");
         let outNewPathMP4 = path.join(dir, '../', filenamify(taskName, { replacement: '_' }) + '.mp4');
-        if (fs.existsSync(ffmpegPath)) {
+        if (fs.existsSync(getFfmpegPath())) {
             let ffmpegInputStream = new FFmpegStreamReadable(null);
             let ff = new ffmpeg(ffmpegInputStream)
-                .setFfmpegPath(ffmpegPath)
+                .setFfmpegPath(getFfmpegPath())
                 .videoCodec('copy')
                 .audioCodec('copy')
                 .format('mp4')
@@ -1673,7 +1696,7 @@ async function startDownload(object, iidx) {
                                 // let stream2 = new FFmpegStreamReadable(null);
                                 // new ffmpeg(stream2)
                                 new ffmpeg()
-                                    // .setFfmpegPath(ffmpegPath)
+                                    // .setFfmpegPath(getFfmpegPath())
                                     .input(outPathMP4)
                                     .input(m4aPath)
                                     .outputOptions([
@@ -1958,10 +1981,10 @@ async function startDownloadAudio(object, iidx, runToken) {
             return;
         }
         let outPathM4A = path.join(dir, '../', Date.now() + ".m4a");
-        if (fs.existsSync(ffmpegPath)) {
+        if (fs.existsSync(getFfmpegPath())) {
             let ffmpegInputStream = new FFmpegStreamReadable(null);
             let ff = new ffmpeg(ffmpegInputStream)
-                .setFfmpegPath(ffmpegPath)
+                .setFfmpegPath(getFfmpegPath())
                 .videoCodec('copy')
                 .audioCodec('copy')
                 .format('mp4')
@@ -2186,11 +2209,11 @@ async function startDownloadLive(object) {
                                     outPathMP4 = path.join(dir, newid + '.mp4');
                                     newid = newid + 1;
                                 }
-                                if (fs.existsSync(ffmpegPath)) {
+                                if (fs.existsSync(getFfmpegPath())) {
                                     ffmpegInputStream = new FFmpegStreamReadable(null);
 
                                     ffmpegObj = new ffmpeg(ffmpegInputStream)
-                                        .setFfmpegPath(ffmpegPath)
+                                        .setFfmpegPath(getFfmpegPath())
                                         .videoCodec('copy')
                                         .audioCodec('copy')
                                         .save(outPathMP4)
@@ -2605,6 +2628,22 @@ ipcMain.on('open-select-m3u8', function (event, arg) {
     });
 });
 
+ipcMain.on('open-select-ffmpeg', function (event) {
+    dialog.showOpenDialog(mainWindow, {
+        title: i18n.t('dialog.title.selectFfmpeg'),
+        properties: ['openFile'],
+        filters: process.platform === 'win32'
+            ? [{ name: 'ffmpeg', extensions: ['exe'] }, { name: 'All Files', extensions: ['*'] }]
+            : [{ name: 'All Files', extensions: ['*'] }]
+    }).then(result => {
+        if (!result.canceled && result.filePaths.length == 1) {
+            event.sender.send('open-select-ffmpeg-reply', result.filePaths[0])
+        }
+    }).catch(err => {
+        logger.error(`showOpenDialog ${err}`)
+    });
+});
+
 ipcMain.on('open-select-ts-dir', function (event, arg) {
     if (arg) {
         let files = [];
@@ -2692,7 +2731,7 @@ ipcMain.on('start-merge-ts', async function (event, task) {
     }
     let outPathMP4 = path.join(dir, `${name}.mp4`);
 
-    if (fs.existsSync(ffmpegPath)) {
+    if (fs.existsSync(getFfmpegPath())) {
         mainWindow.webContents.send('start-merge-ts-status', {
             code: 0,
             progress: 1,
@@ -2701,7 +2740,7 @@ ipcMain.on('start-merge-ts', async function (event, task) {
         ffmpegInputStream = new FFmpegStreamReadable(null);
 
         new ffmpeg(ffmpegInputStream)
-            .setFfmpegPath(ffmpegPath)
+            .setFfmpegPath(getFfmpegPath())
             .videoCodec(task.mergeType == 'speed' ? 'copy' : 'libx264')
             .audioCodec(task.mergeType == 'speed' ? 'copy' : 'aac')
             .format('mp4')
@@ -2726,6 +2765,10 @@ ipcMain.on('start-merge-ts', async function (event, task) {
                 if (fs.existsSync(filePath)) safeUnlink(filePath);
                 fs.renameSync(outPathMP4, filePath);
                 safeRemoveDir(dir);
+
+                if (task.delTs && task.ts_folder) {
+                    (task.ts_files || []).forEach(file => safeUnlink(path.join(task.ts_folder, file)));
+                }
 
                 videoDatas.filter(async (video) => {
                     if (video.dir == path.join(task.ts_folder, '../', task.name)) {
@@ -2786,8 +2829,9 @@ ipcMain.on('start-merge-ts', async function (event, task) {
 
 ipcMain.on('check-update', async function (event, arg) {
     try {
-        const newVersion = await checkUpdate()
-        event.sender.send("check-update-reply", newVersion.replace('v', ''))
+        const latest = await checkUpdate()
+        const version = String(latest || '').replace(/^v/i, '')
+        event.sender.send("check-update-reply", isNewerVersion(version, appInfo.version) ? version : appInfo.version)
     } catch (error) {
         event.sender.send("check-update-reply", appInfo.version)
     }

@@ -1,655 +1,762 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title></title>
-    <link rel="stylesheet" href="lib/element.ui/theme-chalk/index.css">
     <link rel="stylesheet" href="lib/fontawesome-free-6.3.0-web/css/fontawesome.css">
-    <link rel="stylesheet" href="css/animate.css">
-    <link rel="stylesheet" href="css/start.css">
+    <link rel="stylesheet" href="lib/element.ui/theme-chalk/index.css">
+    <link rel="stylesheet" href="css/instrument.css">
     <script src="scripts/global-vars.js"></script>
 </head>
 
-<body class="heisir">
+<body>
+    <div id="app" v-cloak>
+        <div class="app" :class="{ 'no-titlebar': platform === 'darwin' }">
 
-    <div id="app">
-        <template>
-            <el-container>
-                <el-header v-if="platform != 'darwin'" class="header" height='40px'>
-                    <el-row>
-                        <el-col :span="14">
-                            <div class="title">{{$t('app.title')}}</div>
-                        </el-col>
-                    </el-row>
-
-                    <div class="systemTool">
-                        <el-button class="button" v-on:click="clickMinWindow">__</el-button>
-                        <el-button class="button" icon="el-icon-full-screen" v-on:click="clickMaxWindow"></el-button>
-                        <el-button class="button close" icon="el-icon-close" v-on:click="clickClose"></el-button>
+            <!-- titlebar -->
+            <div class="titlebar" v-if="platform !== 'darwin'">
+                <div class="brandline">
+                    <span class="mark">M3U8 <b>DOWNLOADER</b></span>
+                    <span class="sep"></span>
+                    <span class="win-title">{{ $t('ui.windowTitle') }}</span>
+                </div>
+                <div class="tright">
+                    <div class="wbtns">
+                        <button class="wbtn" :title="$t('ui.minimize')" @click="clickMinWindow">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 6h8"/></svg>
+                        </button>
+                        <button class="wbtn" :title="$t('ui.maximize')" @click="clickMaxWindow">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.5" y="2.5" width="7" height="7" rx="1"/></svg>
+                        </button>
+                        <button class="wbtn close" :title="$t('ui.close')" @click="clickClose">
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3 3l6 6M9 3l-6 6"/></svg>
+                        </button>
                     </div>
-                </el-header>
-                <el-main class="main">
-                    <el-tabs id="mainTab" v-model="tabMain" tab-position="left" type="border-card"
-                        style="height: 100%;">
-                        <el-tab-pane name="tab1_download">
-                            <span slot="label"><i class="el-icon-download"></i> {{ $t('sidebar.download') }}</span>
-                            <el-tabs type="border-card" v-model="tabPane">
-                                <el-tab-pane name="tab1_singleDownload" :label="$t('tabs.singleDownload')">
-                                    <el-row type="flex" justify="end" style="margin:auto 4%;">
-                                        <el-col :span="4">
-                                            <el-button class="mybutton" type="primary" icon="el-icon-news"
-                                                @click="clickNewTask">{{$t('singleDownload.buttons.newTask')}}</el-button>
-                                        </el-col>
-                                        <el-col :span="1">
-                                        </el-col>
-                                        <el-col :span="8">
-                                            <el-button class="mybutton" type="danger" icon="el-icon-delete"
-                                                @click="clickClearTask">
-                                                {{$t('singleDownload.buttons.clearCompletedTasks',{finish:
-                                                allVideos.filter(k=>k.status==taskStatus.done)?.length,all:allVideos.length})}}
-                                            </el-button>
-                                        </el-col>
-                                        <el-col v-show="false" :span="4" type="flex">
-                                            <div class="speed el-icon-download">{{downloadSpeed}}</div>
-                                        </el-col>
-                                    </el-row>
-                                    <ul class="list TaskList"
-                                        :style="pager_totalCount < 20 ? 'height: calc(100% - 70px)' : ''">
-                                        <li v-for="o in pager_data" :key="o.id" class="item" :data-id="o.id">
-                                            <div class="m3u8"></div>
-                                            <div class="nametitle">
-                                                <span class="name">
-                                                    <span class="value" :title="o.taskName" @click="clickPlayVideo"
-                                                        :data="o.id">{{o.taskName}}</span>
-                                                    <el-tag v-if="o.tag" type="success" effect="dark" round
-                                                        style="font-size:9px;border-radius:9999px;padding:4px 10px;display:inline;">
-                                                        {{o.tag}}</el-tag>
-                                                </span>
-                                                <p class="link">
-                                                    <span>{{o.url}}</span>
-                                                </p>
-                                                <div class="timestatus">
-                                                    <span class="time">
-                                                        <span class="value">{{timeBeauty(o.time)}}</span>
-                                                    </span>
-                                                    <span class="status">
-                                                        <span class="value">{{o.statusText}}</span>
-                                                    </span>
-                                                </div>
-                                                <div class="filestat" v-if="!o.isLiving">
-                                                    <template v-if="o.segment_stats_total">
-                                                        <span class="ok">{{$t('taskDetail.labels.succeeded')}}
-                                                            {{o.segment_succeeded || 0}}</span>
-                                                        <span class="fail">{{$t('taskDetail.labels.failed')}}
-                                                            {{o.segment_failed || 0}}</span>
-                                                        <span class="total">{{$t('taskDetail.labels.total')}}
-                                                            {{o.segment_stats_total}}</span>
-                                                    </template>
-                                                    <el-button class="detailbtn" type="text" icon="el-icon-view"
-                                                        @click="clickTaskDetail(o)">{{$t('taskDetail.buttons.detail')}}</el-button>
-                                                </div>
-                                            </div>
-                                            <div class="opt">
-                                                <div class="top">
-                                                    <el-button class="is-text opendir" type="success"
-                                                        icon="el-icon-folder-opened" @click="clickItemOptData"
-                                                        opt="openInExplorer" :data="o.videopath||o.dir"></el-button>
-                                                    <el-button class="play is-text" circle type="danger"
-                                                        icon="fa-brands fa-youtube" size="mini"
-                                                        @click="clickItemOptData" opt="playvideo" :data="o.videopath"
-                                                        v-if="o.status == taskStatus.done"></el-button>
-                                                    <el-button class="play is-text" circle type="warning"
-                                                        icon="fa-solid fa-bolt" size="mini" @click="clickItemOptData"
-                                                        opt="manualMerge" :data="o.dir"
-                                                        v-if="o.status == taskStatus.mergeFaild"></el-button>
-                                                    <el-button class="StartStop is-text" circle size="mini"
-                                                        @click="clickItemOptData" opt="StartOrStop" :data="o.id"
-                                                        :type="isTaskRunning(o.status) ? 'primary' : 'warning'"
-                                                        :icon="isTaskRunning(o.status) ? 'fas fa-circle-notch fa-spin' : (o.status == taskStatus.pause ? 'el-icon-download' : 'el-icon-refresh-right')"
-                                                        v-if="![taskStatus.done,taskStatus.downloadFaild,taskStatus.mergeFaild,taskStatus.parsingFailed,taskStatus.saveFolderNoExist].includes(o.status)"></el-button>
-                                                    <el-button class="del is-text" circle type="" icon="el-icon-close"
-                                                        @click="clickItemOptData" opt="delvideo" :data="o.id"
-                                                        size="mini"></el-button>
-                                                </div>
-                                                <div class="bottom" v-if="[taskStatus.downloading].includes(o.status)">
-                                                    <el-progress :percentage="o.segment_downloaded*100/o.segment_total"
-                                                        :show-text="false" color="#8e71c7">
-                                                    </el-progress>
-                                                </div>
-                                            </div>
-                                        </li>
-                                        <el-alert v-if="!allVideos.length"
-                                            style="margin-top: 10px;line-height:1;white-space:pre-line;text-align:center;width:60%;margin:10% auto;max-width:600px;"
-                                            :title="$t('singleDownload.tips.noTasks')" type="success" effect="light"
-                                            :closable="false" :center="true" show-icon></el-alert>
-                                    </ul>
-                                    <el-row type="flex" justify="center">
-                                        <el-pagination :current-page="pager_currPage" :page-size="pager_pageSize"
-                                            :small="false" :background="true" dark="true" :hide-on-single-page="true"
-                                            layout="prev, pager, next" :total="pager_totalCount"
-                                            @size-change="handlePageSizeChange"
-                                            @current-change="handleCurrentPageChange" />
-                                    </el-row>
-                                    <el-dialog :title="$t('newTask.title')" :visible.sync="dlg_newtask_visible"
-                                        width="60%" :modal="true" :close-on-click-modal="false"
-                                        :close-on-press-escape="false" :center="false">
-                                        <el-form label-width="100px" @keyup.enter.native="clickNewTaskOK">
-                                            <el-form-item :label="$t('newTask.inputs.url.label')"
-                                                label-position="right">
-                                                <div @drop="dropM3U8File" @dragover.prevent @dragenter.prevent>
-                                                    <el-input :placeholder="$t('newTask.inputs.url.holder')"
-                                                        v-model="m3u8_url" draggable="false" @input="m3u8UrlChange">
-                                                        <i slot="prefix" class="el-input__icon el-icon-link"></i>
-                                                        <i slot="suffix" class="el-input__icon el-icon-folder-opened"
-                                                            @click="clickSelectM3U8"></i>
-                                                    </el-input>
-                                                </div>
-                                            </el-form-item>
-                                            <el-form-item :label="$t('newTask.inputs.taskName.label')"
-                                                label-position="right">
-                                                <el-input type="text"
-                                                    :placeholder="$t('newTask.inputs.taskName.holder')"
-                                                    v-model="taskName">
-                                                </el-input>
-                                            </el-form-item>
-                                            <el-form-item v-if="playlists.length"
-                                                :label="$t('newTask.inputs.quality.label')" label-position="right">
-                                                <el-select v-model="playlistUri"
-                                                    :placeholder="$t('newTask.inputs.quality.holder')"
-                                                    style="width: 100%;" @change="qualityChange">
-                                                    <el-option v-for="playlist in playlists" :key="playlist.uri"
-                                                        :label="getPlaylistLabel(playlist)" :value="playlist.uri">
-                                                    </el-option>
-                                                </el-select>
-                                            </el-form-item>
-                                            <el-form-item :label="$t('newTask.inputs.tags.label')"
-                                                label-position="right">
-                                                <el-radio-group v-model="taskTag" @change="clickChangeTaskTag">
-                                                    <el-radio-button v-for="category in config_categories"
-                                                        :key="category.tag" :label="category.tag" />
-                                                </el-radio-group>
-                                            </el-form-item>
-                                            <el-form-item :label="$t('newTask.inputs.urlPrefix.label')"
-                                                label-position="right" v-if="m3u8_url?.startsWith('file:///')">
-                                                <el-tooltip effect="light" placement="top-start">
-                                                    <div slot="content" style="white-space:pre-line;">
-                                                        {{$t('newTask.inputs.urlPrefix.content')}}
-                                                    </div>
-                                                    <el-input type="text"
-                                                        :placeholder="$t('newTask.inputs.urlPrefix.holder')"
-                                                        v-model="m3u8_url_prefix"></el-input>
-                                                </el-tooltip>
-                                            </el-form-item>
-                                            <el-form-item :label="$t('newTask.inputs.httpHeaders.label')"
-                                                label-position="right">
-                                                <el-input type="textarea" :rows="3"
-                                                    :placeholder="$t('newTask.inputs.httpHeaders.holder')"
-                                                    v-model="headers"></el-input>
-                                            </el-form-item>
-                                            <el-form-item :label="$t('newTask.inputs.privateKey.label')"
-                                                label-position="right">
-                                                <el-tooltip effect="light" placement="top-start">
-                                                    <div slot="content" style="white-space:pre-line;">
-                                                        {{$t('newTask.inputs.privateKey.content')}}
-                                                    </div>
-                                                    <el-input type="text"
-                                                        :placeholder="$t('newTask.inputs.privateKey.holder')"
-                                                        v-model="myKeyIV">
-                                                    </el-input>
-                                                </el-tooltip>
-                                            </el-form-item>
-                                            <el-form-item :label="$t('newTask.inputs.merge.label')"
-                                                label-position="right">
-                                                <el-checkbox v-model="taskIsDelTs"
-                                                    :label="$t('newTask.inputs.merge.holder')"></el-checkbox>
-                                            </el-form-item>
-                                        </el-form>
-                                        <div slot="footer" class="dialog-footer">
-                                            <el-row :gutter="20">
-                                                <el-col :span="11" :offset="4">
-                                                    <el-alert :title="addTaskMessage" type="info" :closable="false"
-                                                        effect="dark"
-                                                        style="background-color: var(--el-bg-color-overlay); color: var(--el-text-color-regular);">
-                                                    </el-alert>
-                                                </el-col>
-                                                <el-col :span="8" :offset="1">
-                                                    <el-button type="primary" @click="clickNewTaskOK"
-                                                        style="width: 100%;">{{$t('newTask.buttons.confirm')}}
-                                                    </el-button>
-                                                </el-col>
-                                            </el-row>
-                                        </div>
-                                    </el-dialog>
-                                    <el-dialog :title="$t('deleteTask.title')" :visible.sync="dlg_deltask_visible"
-                                        width="40%" :modal="true" :close-on-click-modal="true"
-                                        :close-on-press-escape="true" :center="true">
-                                        <el-form label-width="80px" style="margin: 2rem 0;">
-                                            <p style="font-size: 1rem;text-align: center;color: #bfbdbd;">
-                                                {{dlg_deltask_name}}</p>
-                                            <p style="text-align: center;margin-top: 1rem;">
-                                                <el-checkbox v-model="dlg_deltask_isDelFile"
-                                                    :label="$t('deleteTask.buttons.withFile')"></el-checkbox>
-                                            </p>
-                                        </el-form>
-                                        <div slot="footer" class="dialog-footer">
-                                            <el-row :gutter="20">
-                                                <el-col :span="8" :offset="4">
-                                                    <el-button type="info" @click="clickDelTaskCancel"
-                                                        style="width: 100%;">{{$t('deleteTask.buttons.cancel')}}
-                                                    </el-button>
-                                                </el-col>
-                                                <el-col :span="8" :offset="1">
-                                                    <el-button type="primary" @click="clickDelTaskOK"
-                                                        style="width: 100%;">{{$t('deleteTask.buttons.ok')}}
-                                                    </el-button>
-                                                </el-col>
-                                            </el-row>
-                                        </div>
-                                    </el-dialog>
-                                    <el-dialog :title="$t('taskDetail.title')" :visible.sync="dlg_taskdetail_visible"
-                                        width="70%" :modal="true" :close-on-click-modal="true"
-                                        :close-on-press-escape="true" @closed="clickCloseTaskDetail">
-                                        <div class="task-detail">
-                                            <p class="detail-name">
-                                                {{dlg_taskdetail_task ? dlg_taskdetail_task.taskName : ''}}</p>
-                                            <div class="detail-summary">
-                                                <span class="ok">{{$t('taskDetail.labels.succeeded')}}
-                                                    <b>{{dlg_taskdetail_stats.succeeded}}</b></span>
-                                                <span class="fail">{{$t('taskDetail.labels.failed')}}
-                                                    <b>{{dlg_taskdetail_stats.failed}}</b></span>
-                                                <span class="downloading">{{$t('taskDetail.labels.downloading')}}
-                                                    <b>{{dlg_taskdetail_stats.downloading}}</b></span>
-                                                <span class="pending">{{$t('taskDetail.labels.pending')}}
-                                                    <b>{{dlg_taskdetail_stats.pending}}</b></span>
-                                                <span class="total">{{$t('taskDetail.labels.total')}}
-                                                    <b>{{dlg_taskdetail_stats.total}}</b></span>
-                                            </div>
-                                            <div class="detail-legend">
-                                                <span class="cell s2"></span>{{$t('taskDetail.labels.succeeded')}}
-                                                <span class="cell s3"></span>{{$t('taskDetail.labels.failed')}}
-                                                <span class="cell s1"></span>{{$t('taskDetail.labels.downloading')}}
-                                                <span class="cell s0"></span>{{$t('taskDetail.labels.pending')}}
-                                            </div>
-                                            <div class="detail-matrix" v-if="dlg_taskdetail_stats.total">
-                                                <div v-for="(st, i) in dlg_taskdetail_statuses" :key="i"
-                                                    class="cell" :class="'s' + st"
-                                                    :title="(i + 1) + ' - ' + statusLabel(st)"></div>
-                                            </div>
-                                            <el-alert v-else :title="$t('taskDetail.tips.empty')" type="info"
-                                                :closable="false" show-icon></el-alert>
-                                        </div>
-                                    </el-dialog>
-                                </el-tab-pane>
-                                <el-tab-pane name="tab1_multiDownload" :label="$t('tabs.multiDownload')">
-                                    <el-form label-width="130px" style="margin-right: 65px;">
-                                        <el-form-item :label="$t('multiDownload.inputs.m3u8Urls.label')"
-                                            label-position="right">
-                                            <el-input type="textarea" :rows="6"
-                                                :placeholder="$t('multiDownload.inputs.m3u8Urls.holder')"
-                                                v-model="m3u8_urls"></el-input>
-                                        </el-form-item>
-                                        <el-form-item :label="$t('multiDownload.inputs.headers.label')"
-                                            label-position="right">
-                                            <el-input type="textarea" :rows="4"
-                                                :placeholder="$t('multiDownload.inputs.headers.holder')"
-                                                v-model="headers"></el-input>
-                                        </el-form-item>
-                                        <el-form-item :label="$t('multiDownload.inputs.afterMerge.label')"
-                                            label-position="right">
-                                            <el-checkbox v-model="taskIsDelTs"
-                                                :label="$t('multiDownload.inputs.afterMerge.holder')"></el-checkbox>
-                                        </el-form-item>
-                                        <el-form-item>
-                                            <el-button class="mybutton" type="primary" @click="clickNewTaskMuti">
-                                                {{$t('multiDownload.buttons.multiDownload')}}
-                                            </el-button>
-                                        </el-form-item>
-                                    </el-form>
-                                </el-tab-pane>
-                                <el-tab-pane name="tab1_mergeTS" :label="$t('tabs.mergeTS')">
-                                    <el-row :gutter="8" style="margin-bottom: 5px;">
-                                        <el-col :span="3" :offset="1">
-                                            <label
-                                                class="el-form-item__label">{{$t('mergeTS.inputs.tsDir.label')}}</label>
-                                            <!-- <span style="line-height: 40px;float: right;">视频片段</span> -->
-                                        </el-col>
-                                        <el-col :span="20">
-                                            <div @drop="dropTSFiles" @dragover.prevent @dragenter.prevent>
-                                                <el-input :placeholder="$t('mergeTS.inputs.tsDir.holder')"
-                                                    v-model="ts_dir" clearable draggable="false"
-                                                    @clear="clickClearMergeTS">
-                                                    <i slot="suffix" class="el-input__icon el-icon-folder-opened"
-                                                        @click="clickSelectTSDir"></i>
-                                                </el-input>
-                                            </div>
-                                        </el-col>
-                                    </el-row>
-                                    <el-row :gutter="8" style="margin-bottom: 5px;">
-                                        <el-col :span="3" :offset="1">
-                                            <label
-                                                class="el-form-item__label">{{$t('mergeTS.inputs.tsTaskName.label')}}</label>
-                                        </el-col>
-                                        <el-col :span="20">
-                                            <el-input :placeholder="$t('mergeTS.inputs.tsTaskName.holder')"
-                                                v-model="tsTaskName" clearable draggable="false"></el-input>
-                                        </el-col>
-                                    </el-row>
-                                    <el-row :gutter="8" style="margin-bottom: 5px;">
-                                        <el-col :span="7" :offset="3">
-                                            <div>
-                                                <el-radio style="line-height: 40px;" v-model="tsMergeType"
-                                                    label="speed">{{$t('mergeTS.buttons.quickMerge')}}
-                                                </el-radio>
-                                                <el-radio style="line-height: 40px;" v-model="tsMergeType"
-                                                    label="transcoding">
-                                                    {{$t('mergeTS.buttons.fixMerge')}}
-                                                </el-radio>
-                                            </div>
-                                        </el-col>
-                                        <el-col :span="6" :offset="1">
-                                            <span
-                                                style="line-height: 40px;color: #ccc;">{{$t('mergeTS.tips.total',{total:ts_urls.length})}}</span>
-                                        </el-col>
-                                        <el-col :span="4" :offset="1">
-                                            <el-button class="mybutton" type="primary" @click="clickStartMergeTS"
-                                                :disabled="ts_urls.length==0">{{$t('mergeTS.buttons.startMerge')}}</el-button>
-                                        </el-col>
-                                        <el-col :span="2">
-                                            <el-button class="mybutton" type="danger" @click="clickClearMergeTS"
-                                                :disabled="ts_urls.length==0">{{$t('mergeTS.buttons.clearForm')}}</el-button>
-                                        </el-col>
-                                    </el-row>
+                </div>
+            </div>
 
-                                    <el-row :gutter="8" style="margin-top: 10px;margin-bottom: 5px;"
-                                        v-if="tsMergeStatus">
-                                        <el-col :span="4" :offset="1">
-                                            <span v-if="tsMergeStatus !='success'"
-                                                style="line-height: 100px;color: #ccc;">
-                                                {{$t('mergeTS.inputs.mergeProgress')}}
-                                            </span>
-                                            <span v-if="tsMergeStatus =='success'"
-                                                style="line-height: 40px;color: #ccc;">
-                                                {{$t('mergeTS.inputs.viewFile')}}
-                                            </span>
-                                        </el-col>
-                                        <el-col :span="6" v-if="tsMergeStatus !='success'">
-                                            <el-progress type="circle" :percentage="tsMergeProgress" status="success"
-                                                :width="100"></el-progress>
-                                        </el-col>
-                                        <el-col :span="4" v-else>
-                                            <el-button class="mybutton" type="success" @click="clickOpenMergeTSDir">
-                                                {{$t('mergeTS.buttons.openFolder')}}
-                                            </el-button>
-                                        </el-col>
-                                        <el-col :span="4" v-if="tsMergeMp4Path">
-                                            <el-button class="mybutton" type="danger" @click="clickPlayMergeMp4">
-                                                {{$t('mergeTS.buttons.playVideo')}}
-                                            </el-button>
-                                        </el-col>
-                                    </el-row>
+            <div class="shell">
+                <!-- rail -->
+                <aside class="rail">
+                    <button class="nav-item" :class="{ active: view === 'download' }" @click="setView('download')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+                        <span>{{ $t('sidebar.download') }}</span>
+                        <span class="nav-pill" v-if="activeCount">{{ activeCount }}</span>
+                    </button>
 
-                                    <el-row :gutter="8" v-if="tsMergeStatus !='success' && tsMergeStatus">
-                                        <el-col :span="3" :offset="1">
-                                            <span style="line-height: 40px;float: right;">
-                                                {{$t('mergeTS.inputs.log')}}
-                                            </span>
-                                        </el-col>
-                                        <el-col :span="20">
-                                            <el-input type="textarea" :rows="4" readonly placeholder=""
-                                                v-model="tsMergeStatus">
-                                            </el-input>
-                                        </el-col>
-                                    </el-row>
-                                </el-tab-pane>
-                            </el-tabs>
-                        </el-tab-pane>
-                        <el-tab-pane name="tab2_settings">
-                            <span slot="label"><i class="el-icon-s-tools"></i> {{ $t('sidebar.settings') }}</span>
-                            <el-row v-if="false" :gutter="8">
-                                <el-col :span="4" :offset="1">
-                                    <span style="line-height: 40px;float: right;color: #ccc;">
-                                        {{$t('settings.inputs.saveFolder.label')}}
+                    <button class="nav-item" :class="{ active: view === 'merge' }" @click="setView('merge')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5L12 21l8-4.5"/></svg>
+                        <span>{{ $t('tabs.mergeTS') }}</span>
+                    </button>
+
+                    <button class="nav-item" :class="{ active: view === 'settings' }" @click="setView('settings')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a2 2 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a2 2 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.6.76 1 1.4 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+                        <span>{{ $t('sidebar.settings') }}</span>
+                    </button>
+
+                    <div class="rail-foot">
+                        <div class="theme-switch">
+                            <button :class="{ active: config_theme === 'dark' }" :title="$t('ui.dark')" @click="themeChange('dark')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                            </button>
+                            <button :class="{ active: config_theme === 'light' }" :title="$t('ui.light')" @click="themeChange('light')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
+                            </button>
+                            <button :class="{ active: config_theme === 'system' }" :title="$t('ui.system')" @click="themeChange('system')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg>
+                            </button>
+                        </div>
+                        <div class="rail-ver">v{{ version }}</div>
+                    </div>
+                </aside>
+
+                <!-- main -->
+                <main class="main">
+                    <!-- ================= 下载页 ================= -->
+                    <section class="view" :class="{ active: view === 'download' }">
+                        <div class="page-head">
+                            <h1>{{ $t('tabs.singleDownload') }}</h1>
+                            <span class="spacer"></span>
+                            <div class="search">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+                                <input type="text" v-model="searchText" :placeholder="$t('ui.search')">
+                            </div>
+                            <button class="btn primary" @click="openNewTaskDialog">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                                {{ $t('singleDownload.buttons.newTask') }}
+                            </button>
+                        </div>
+
+                        <div class="filters">
+                            <span class="filter-label">{{ $t('ui.status') }}</span>
+                            <button class="chip-btn" :class="{ active: stateFilter === 'all' }" @click="stateFilter = 'all'">
+                                {{ $t('ui.all') }} <span class="n">{{ stateCounts.all }}</span>
+                            </button>
+                            <button class="chip-btn" :class="{ active: stateFilter === 'downloading' }" @click="stateFilter = 'downloading'">
+                                {{ $t('ui.downloading') }} <span class="n">{{ stateCounts.downloading }}</span>
+                            </button>
+                            <button class="chip-btn" :class="{ active: stateFilter === 'done' }" @click="stateFilter = 'done'">
+                                {{ $t('ui.done') }} <span class="n">{{ stateCounts.done }}</span>
+                            </button>
+                            <button class="chip-btn" :class="{ active: stateFilter === 'failed' }" @click="stateFilter = 'failed'">
+                                {{ $t('ui.failed') }} <span class="n">{{ stateCounts.failed }}</span>
+                            </button>
+                            <button class="chip-btn" :class="{ active: stateFilter === 'paused' }" @click="stateFilter = 'paused'">
+                                {{ $t('ui.paused') }} <span class="n">{{ stateCounts.paused }}</span>
+                            </button>
+
+                            <span class="fdiv"></span>
+
+                            <span class="filter-label">{{ $t('ui.category') }}</span>
+                            <button class="chip-btn" :class="{ active: catFilter === 'all' }" @click="catFilter = 'all'">
+                                {{ $t('ui.all') }} <span class="n">{{ allVideos.length }}</span>
+                            </button>
+                            <button class="chip-btn" v-for="category in config_categories" :key="category.tag"
+                                :class="{ active: catFilter === category.tag }" @click="catFilter = category.tag">
+                                {{ category.tag }} <span class="n">{{ catCounts[category.tag] || 0 }}</span>
+                            </button>
+
+                            <span class="spacer"></span>
+                            <button class="chip-btn sm" v-if="stateCounts.done > 0" @click="clickClearTask">
+                                {{ $t('ui.clearDone') }}
+                            </button>
+                            <span class="sort-note">{{ $t('ui.sort') }}</span>
+                        </div>
+
+                        <div class="task-list" v-if="filteredTasks.length">
+                            <article class="task" v-for="o in filteredTasks" :key="o.id" :data-state="stateOf(o)"
+                                @contextmenu.prevent="openCtx($event, o)">
+                                <div class="tile">
+                                    <div class="ring" :style="{ '--p': taskPercent(o) }"></div>
+                                    <span class="pct" v-if="stateOf(o) === 'downloading'">{{ taskPercent(o) }}<i>%</i></span>
+                                    <span class="state-ico" v-else-if="stateOf(o) === 'done'">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
                                     </span>
-                                </el-col>
-                                <el-col :span="15">
-                                    <el-input :placeholder="$t('settings.inputs.saveFolder.holder')"
-                                        v-model="config_save_dir" :readonly="true">
-                                    </el-input>
-                                </el-col>
-                                <el-col :span="3">
-                                    <el-button class="mybutton" type="info" icon="el-icon-folder-opened"
-                                        @click="clickOpenDir">{{$t('settings.buttons.browser')}}</el-button>
-                                </el-col>
-                            </el-row>
-                            <br />
-                            <div class="settings-pane">
-                                <div class="settings-section">
-                                    <div class="settings-section-title">{{$t('settings.sections.savePath')}}</div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.saveFolder.label')}}</div>
-                                        <div class="settings-control">
-                                            <div v-for="(category, index) in config_categories" :key="category.tag"
-                                                class="settings-category-row">
-                                                <el-input :readonly="true" :value="category.dir"
-                                                    class="task-category settings-category-input"
-                                                    :type="category.star?'password':'text'"
-                                                    :placeholder="$t('settings.inputs.saveFolder.holder')">
-                                                    <template slot="prepend" class="el-tag--success el-tag--dar">
-                                                        <el-button
-                                                            @click="clickCategoryModify(category)">{{category.tag}}</el-button>
-                                                    </template>
-                                                    <template slot="append">
-                                                        <el-dropdown split-button type="primary"
-                                                            @click="clickCategorySelect(index)"
-                                                            @command="clickCategoryOption">
-                                                            {{$t('settings.buttons.browser')}}
-                                                            <template #dropdown>
-                                                                <el-dropdown-menu>
-                                                                    <el-dropdown-item
-                                                                        :command="clickCategoryOptionBefore(index, category.star)"
-                                                                        style="font-size: 1.2rem;">
-                                                                        <i v-if="category.star"
-                                                                            class="fa-solid fa-eye-slash"></i>
-                                                                        <i v-else class="fa-regular fa-eye"></i>
-                                                                    </el-dropdown-item>
-                                                                    <el-dropdown-item v-if="config_categories.length > 1"
-                                                                        :command="clickCategoryOptionBefore(index, 'delete')">❌</el-dropdown-item>
-                                                                </el-dropdown-menu>
-                                                            </template>
-                                                        </el-dropdown>
-                                                    </template>
-                                                </el-input>
-                                                <el-button v-if="index == 0" type="info" class="settings-add-btn"
-                                                    @click="clickCategoryAddNew">{{$t('settings.inputs.tags.add')}}</el-button>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    <span class="state-ico" v-else-if="stateOf(o) === 'failed'">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 7l10 10"/><path d="M17 7L7 17"/></svg>
+                                    </span>
+                                    <span class="state-ico" v-else>
+                                        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="5" width="3.4" height="14" rx="1.1"/><rect x="13.6" y="5" width="3.4" height="14" rx="1.1"/></svg>
+                                    </span>
                                 </div>
-                                <div class="settings-section">
-                                    <div class="settings-section-title">{{$t('settings.sections.download')}}</div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.concurrency.label')}}</div>
-                                        <div class="settings-control">
-                                            <el-input-number v-model="config_downloadConcurrency" :min="1" :max="32"
-                                                :step="1" @change="concurrencyChange" class="settings-number">
-                                            </el-input-number>
-                                        </div>
+
+                                <div class="tbody">
+                                    <div class="trow">
+                                        <h3 class="tname" :title="o.taskName" @click="openDetail(o)">{{ o.taskName }}</h3>
+                                        <span class="tag" v-if="o.tag">{{ o.tag }}</span>
                                     </div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.maxRetries.label')}}</div>
-                                        <div class="settings-control">
-                                            <el-input-number v-model="config_downloadMaxRetries" :min="1" :max="100"
-                                                :step="1" @change="maxRetriesChange" class="settings-number">
-                                            </el-input-number>
-                                        </div>
+                                    <div class="turl" :title="o.url">{{ o.url }}</div>
+                                    <div class="tmeta">
+                                        <template v-if="!o.isLiving">
+                                            <span class="stat ok">{{ $t('taskDetail.labels.succeeded') }} {{ o.segment_succeeded || 0 }}</span>
+                                            <span class="stat bad">{{ $t('taskDetail.labels.failed') }} {{ o.segment_failed || 0 }}</span>
+                                            <span class="stat">{{ $t('taskDetail.labels.total') }} {{ segTotal(o) }}</span>
+                                            <span class="vline"></span>
+                                        </template>
+                                        <span class="state-text" :class="statusTextClass(o)">{{ stateText(o) }}</span>
+                                        <span class="ttime">{{ timeText(o) }}</span>
                                     </div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.proxy.label')}}</div>
-                                        <div class="settings-control">
-                                            <el-input class="settings-text"
-                                                :placeholder="$t('settings.inputs.proxy.holder')" v-model="config_proxy"
-                                                @change="proxyChange"></el-input>
-                                        </div>
-                                    </div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.log.label')}}</div>
-                                        <div class="settings-control settings-control-inline">
-                                            <el-button class="mybutton" type="info" icon="el-icon-view"
-                                                @click="clickOpenLogDir">{{$t('settings.buttons.viewLog')}}</el-button>
-                                        </div>
+                                    <div class="progress" :class="{ live: stateOf(o) === 'downloading' }">
+                                        <i :style="{ width: taskPercent(o) + '%' }"></i>
                                     </div>
                                 </div>
 
-                                <div class="settings-section">
-                                    <div class="settings-section-title">{{$t('settings.sections.appearance')}}</div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.theme.label')}}</div>
-                                        <div class="settings-control">
-                                            <el-select v-model="config_theme" class="settings-select" @change="themeChange">
-                                                <el-option v-for="opt in themeOptions" :key="opt.value" :label="opt.label"
-                                                    :value="opt.value">
-                                                </el-option>
-                                            </el-select>
-                                        </div>
-                                    </div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.inputs.language.label')}}</div>
-                                        <div class="settings-control">
-                                            <el-select v-model="config_language" class="settings-select"
-                                                @change="languageChange">
-                                                <el-option v-for="lang in languages" :key="lang.lang" :label="lang.lang"
-                                                    :value="lang.value">
-                                                </el-option>
-                                            </el-select>
-                                        </div>
+                                <div class="actions">
+                                    <button class="act" @click="openFolder(o)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17V7.5z"/></svg>
+                                        <span>{{ $t('ui.open') }}</span>
+                                    </button>
+
+                                    <button class="act accent" v-if="o.status === taskStatus.done" @click="playVideo(o)">
+                                        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+                                        <span>{{ $t('ui.play') }}</span>
+                                    </button>
+                                    <button class="act accent" v-else-if="o.status === taskStatus.mergeFaild" @click="manualMerge(o)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 21H3l1.3-9.7a4 4 0 0 0 5-5z"/></svg>
+                                        <span>{{ $t('singleDownload.tips.manualMerge') }}</span>
+                                    </button>
+                                    <button class="act accent" v-else-if="canToggle(o)" @click="toggleRunning(o)">
+                                        <svg v-if="isTaskRunning(o.status)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6v12"/><path d="M15 6v12"/></svg>
+                                        <svg v-else-if="o.status === taskStatus.pause" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+                                        <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.7"/><path d="M20 5v6h-6"/></svg>
+                                        <span>{{ isTaskRunning(o.status) ? $t('ui.pause') : (o.status === taskStatus.pause ? $t('ui.resume') : $t('ui.retry')) }}</span>
+                                    </button>
+
+                                    <button class="act danger" @click="openDelete(o)">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
+                                        <span>{{ $t('ui.delete') }}</span>
+                                    </button>
+                                </div>
+                            </article>
+                        </div>
+
+                        <div class="list-empty" v-else>
+                            <span class="mono-inline">{{ allVideos.length ? $t('ui.emptyFilter') : $t('singleDownload.tips.noTasks') }}</span>
+                        </div>
+
+                        <div class="list-foot">
+                            <span class="kbd">{{ $t('ui.rightClick') }}</span> {{ $t('ui.footCtx') }}
+                            <span style="opacity:.5">·</span>
+                            {{ $t('ui.footClear') }}
+                        </div>
+                    </section>
+
+                    <!-- ================= 合并页 ================= -->
+                    <section class="view" :class="{ active: view === 'merge' }">
+                        <div class="page-head">
+                            <h1>{{ $t('tabs.mergeTS') }}</h1>
+                        </div>
+
+                        <div class="settings-grid">
+                            <div class="card span2">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16.5L12 21l8-4.5"/></svg>
+                                    </span>
+                                    <h2>{{ $t('ui.source') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('mergeTS.inputs.tsDir.label') }}</label>
+                                    <div class="control">
+                                        <input class="input" readonly :value="ts_dir" :placeholder="$t('mergeTS.inputs.tsDir.holder')">
+                                        <button class="btn sm ghost" @click="clickSelectTSDir">{{ $t('settings.buttons.browser') }}</button>
                                     </div>
                                 </div>
 
-                                <div class="settings-section">
-                                    <div class="settings-section-title">{{$t('settings.sections.behavior')}}</div>
-                                    <div class="settings-item">
-                                        <div class="settings-label">{{$t('settings.buttons.closeBtn')}}</div>
-                                        <div class="settings-control">
-                                            <el-select v-model="config_closeAppBehavior" class="settings-select"
-                                                @change="closeAppBehaviorChange">
-                                                <el-option v-for="(action, index) in $t('settings.dropdown.closeBtn')"
-                                                    :key="action" :label="action" :value="index">
-                                                </el-option>
-                                            </el-select>
+                                <div class="row">
+                                    <label>{{ $t('ui.dropLabel') }}</label>
+                                    <div class="control">
+                                        <div class="dropzone" @click="clickSelectTSDir" @drop.prevent="dropTSFiles" @dragover.prevent @dragenter.prevent>
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v2.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V16"/></svg>
+                                            {{ $t('ui.mergeDrop') }}
+                                            <small>{{ ts_urls.length ? $t('ui.mergeImported', { n: ts_urls.length }) : $t('ui.mergeNoFiles') }}</small>
                                         </div>
                                     </div>
-                                    <div class="settings-item" v-if="isDev">
-                                        <div class="settings-label">Dev</div>
-                                        <div class="settings-control settings-control-inline">
-                                            <el-button type="warning" @click="clickOnTest">
-                                                Test function
-                                            </el-button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="settings-footer">
-                                    <el-button class="mybutton" type="info" icon="fa-brands fa-github"
-                                        @click="clickOpenGithub">{{$t('about.github')}}</el-button>
-                                    <span class="settings-version">v{{version}}<sup
-                                            style="color: #ff2929;margin-left:10px;font-size:10px;">{{version ==
-                                            newVersion? '' : $t('about.newVersion')}}</sup></span>
                                 </div>
                             </div>
-                        </el-tab-pane>
-                    </el-tabs>
-                    <el-dialog :title="dlg_category_title" :visible.sync="dlg_category_visible"
-                        :width="dlg_category_action == 'delete' ? '500px' : '70%'" :modal="true"
-                        :close-on-click-modal="true" :close-on-press-escape="true" :center="true"
-                        class="dialog-category task-category">
-                        <br />
-                        <br />
-                        <el-form :model="categoryForm" :rules="categoryRules" ref="categoryForm">
-                            <el-form-item label-width="8rem" :label="$t('settings.dialog.category.inputs.label')"
-                                prop="category">
-                                <span v-if="dlg_category_action == 'delete'"
-                                    class="text-white">：{{categoryForm.category}}</span>
-                                <el-input v-else :placeholder="$t('settings.dialog.category.inputs.holder')"
-                                    style="width: 15rem;" v-model="categoryForm.category" :maxlength="20">
-                                </el-input>
-                            </el-form-item>
-                            <br />
-                            <el-form-item label-width="8rem" :label="$t('settings.dialog.category.inputs.saveFolder')"
-                                prop="saveFolder">
-                                <span v-if="dlg_category_action == 'delete'"
-                                    class="text-white">：{{categoryForm.saveFolder}}</span>
-                                <el-input v-else :placeholder="$t('settings.inputs.saveFolder.holder')"
-                                    v-model="categoryForm.saveFolder" :readonly="true" :type="dlg_category_input_type">
-                                    <template slot="append">
-                                        <el-button class="mybutton" type="info" icon="el-icon-folder-opened"
-                                            @click="clickOpenDir">{{$t('settings.buttons.browser')}}</el-button>
-                                    </template>
-                                </el-input>
-                            </el-form-item>
-                            <br />
-                            <el-form-item v-if="dlg_category_action != 'delete'" label-width="8rem" label=""
-                                prop="star">
-                                <el-checkbox v-model="categoryForm.star" @change="handleChangeFolderStar"
-                                    :label="$t('settings.dialog.category.inputs.star')"></el-checkbox>
-                            </el-form-item>
-                        </el-form>
-                        <br />
-                        <div slot="footer" class="dialog-footer">
-                            <el-row :gutter="20">
-                                <el-col :span="8" :offset="4">
-                                    <el-button v-if="dlg_category_action == 'delete'" type="info"
-                                        @click="dlg_category_visible = false"
-                                        style="width: 100%;">{{$t('deleteTask.buttons.cancel')}}
-                                    </el-button>
-                                    <el-button v-else type="info" @click="resetForm('categoryForm')"
-                                        style="width: 100%;">{{$t('deleteTask.buttons.reset')}}
-                                    </el-button>
-                                </el-col>
-                                <el-col :span="8" :offset="1">
-                                    <el-button type="primary" @click="submitForm('categoryForm')"
-                                        style="width: 100%;">{{$t('deleteTask.buttons.ok')}}
-                                    </el-button>
-                                </el-col>
-                            </el-row>
+
+                            <div class="card">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+                                    </span>
+                                    <h2>{{ $t('ui.mergeOptions') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('mergeTS.inputs.tsTaskName.label') }}</label>
+                                    <div class="control">
+                                        <input class="input" v-model="tsTaskName" :placeholder="$t('mergeTS.inputs.tsTaskName.holder')" style="font-family: var(--font-ui);">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.mergeMode') }}</label>
+                                    <div class="control">
+                                        <select class="select" v-model="tsMergeType" style="width: 100%;">
+                                            <option value="speed">{{ $t('mergeTS.buttons.quickMerge') }}</option>
+                                            <option value="transcoding">{{ $t('mergeTS.buttons.fixMerge') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v13H4z"/><path d="M8 4h8"/><path d="M9 12h6"/></svg>
+                                    </span>
+                                    <h2>{{ $t('ui.outputCard') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.mergeOutput') }}</label>
+                                    <div class="control">
+                                        <input class="input" readonly :value="mergeOutputDir" :placeholder="$t('ui.mergeNoDir')">
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.cleanSegments') }}</label>
+                                    <div class="control">
+                                        <label class="switch">
+                                            <input type="checkbox" v-model="tsMergeDelTs">
+                                            <span class="track"></span>
+                                            {{ $t('ui.cleanSegmentsLabel') }}
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card span2">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 15l3-4 3 2 4-6"/></svg>
+                                    </span>
+                                    <h2>{{ $t('ui.progressCard') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('mergeTS.inputs.mergeProgress') }}</label>
+                                    <div class="control stack">
+                                        <div class="progress live" style="height: 6px;">
+                                            <i :style="{ width: tsMergeProgress + '%' }"></i>
+                                        </div>
+                                        <span class="mono-inline">{{ tsMergeProgress }}% · {{ tsMergeStatus || '—' }}</span>
+                                    </div>
+                                </div>
+
+                                <div class="row" style="align-items: flex-start;">
+                                    <label style="padding-top: 4px;">{{ $t('ui.log') }}</label>
+                                    <div class="control">
+                                        <div class="log" v-if="tsMergeLog.length">{{ tsMergeLog.join('\n') }}</div>
+                                        <div class="log log-empty" v-else>—</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                    </el-dialog>
-                </el-main>
-            </el-container>
-        </template>
+
+                        <div class="merge-actions">
+                            <button class="btn primary" :disabled="!ts_urls.length" @click="startMerge(false)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>
+                                {{ $t('ui.startMerge') }}
+                            </button>
+                            <button class="btn ghost" :disabled="!ts_urls.length" @click="startMerge(true)">{{ $t('ui.fixMerge') }}</button>
+                            <button class="btn ghost" :disabled="!ts_urls.length && !tsMergeStatus" @click="clearMerge">{{ $t('ui.clear') }}</button>
+                            <span class="spacer"></span>
+                            <button class="btn ghost" :disabled="!tsMergeMp4Dir" @click="openMergeOutput">{{ $t('ui.openOutput') }}</button>
+                            <button class="btn ghost" :disabled="!tsMergeMp4Path" @click="playMergeOutput">{{ $t('ui.playVideo') }}</button>
+                        </div>
+                    </section>
+
+                    <!-- ================= 设置页 ================= -->
+                    <section class="view" :class="{ active: view === 'settings' }">
+                        <div class="page-head">
+                            <h1>{{ $t('sidebar.settings') }}</h1>
+                        </div>
+
+                        <div class="settings-grid">
+                            <div class="card span2">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17V7.5z"/></svg>
+                                    </span>
+                                    <h2>{{ $t('settings.sections.savePath') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.categories') }}</label>
+                                    <div class="control stack">
+                                        <div class="path-row" v-for="(category, index) in config_categories" :key="category.tag">
+                                            <button class="dir-tag" :title="$t('settings.dialog.category.title.modify')" @click="clickCategoryModify(category)">{{ category.tag }}</button>
+                                            <input class="input" readonly :type="category.star ? 'password' : 'text'" :value="category.dir"
+                                                :placeholder="$t('settings.inputs.saveFolder.holder')">
+                                            <button class="btn sm ghost" @click="clickCategorySelect(index)">{{ $t('settings.buttons.browser') }}</button>
+                                            <button class="btn sm ghost ico" :title="category.star ? $t('ui.showPath') : $t('ui.hidePath')" @click="toggleCategoryStar(index)">
+                                                <svg v-if="category.star" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.2A9.8 9.8 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-3.2 3.8"/><path d="M6.3 6.6A17 17 0 0 0 3 12s4 6 9 6c1.6 0 3-.4 4.3-1.1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+                                                <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
+                                            </button>
+                                            <button class="btn sm ghost ico" v-if="config_categories.length > 1" :title="$t('ui.removeCategory')" @click="askDeleteCategory(index)">
+                                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
+                                            </button>
+                                        </div>
+                                        <button class="btn sm ghost" style="align-self: flex-start; margin-top: 2px;" @click="clickCategoryAddNew">{{ $t('settings.inputs.tags.add') }}</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+                                    </span>
+                                    <h2>{{ $t('settings.sections.download') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.concurrency') }}</label>
+                                    <div class="control">
+                                        <div class="stepper">
+                                            <button @click="stepConcurrency(-1)">−</button>
+                                            <span class="val">{{ config_downloadConcurrency }}</span>
+                                            <button @click="stepConcurrency(1)">+</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.retries') }}</label>
+                                    <div class="control">
+                                        <div class="stepper">
+                                            <button @click="stepRetries(-1)">−</button>
+                                            <span class="val">{{ config_downloadMaxRetries }}</span>
+                                            <button @click="stepRetries(1)">+</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.proxy') }}</label>
+                                    <div class="control">
+                                        <input class="input" v-model="config_proxy" :placeholder="$t('ui.proxyHolder')" @change="proxyChange">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                                    </span>
+                                    <h2>{{ $t('settings.sections.appearance') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.theme') }}</label>
+                                    <div class="control">
+                                        <div class="theme-switch lg">
+                                            <button :class="{ active: config_theme === 'dark' }" @click="themeChange('dark')">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                                                {{ $t('ui.dark') }}
+                                            </button>
+                                            <button :class="{ active: config_theme === 'light' }" @click="themeChange('light')">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
+                                                {{ $t('ui.light') }}
+                                            </button>
+                                            <button :class="{ active: config_theme === 'system' }" @click="themeChange('system')">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg>
+                                                {{ $t('ui.system') }}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.language') }}</label>
+                                    <div class="control">
+                                        <select class="select" v-model="config_language" @change="languageChange">
+                                            <option v-for="lang in languages" :key="lang.value" :value="lang.value">{{ lang.lang }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4V5z"/></svg>
+                                    </span>
+                                    <h2>{{ $t('settings.sections.behavior') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('settings.buttons.closeBtn') }}</label>
+                                    <div class="control">
+                                        <select class="select" v-model.number="config_closeAppBehavior" @change="closeAppBehaviorChange">
+                                            <option v-for="(action, index) in $t('settings.dropdown.closeBtn')" :key="index" :value="index">{{ action }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('settings.inputs.log.label') }}</label>
+                                    <div class="control">
+                                        <button class="btn sm ghost" @click="clickOpenLogDir">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg>
+                                            {{ $t('settings.buttons.viewLog') }}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-head">
+                                    <span class="ico">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="13" rx="2"/><path d="M4 11h16"/><path d="M9 3v4M15 3v4"/></svg>
+                                    </span>
+                                    <h2>{{ $t('ui.mergeCard') }}</h2>
+                                    
+                                </div>
+
+                                <div class="row">
+                                    <label>{{ $t('ui.ffmpeg') }}</label>
+                                    <div class="control">
+                                        <input class="input" v-model="config_ffmpeg" :placeholder="$t('ui.ffmpegHolder')" style="font-family: var(--font-mono);" @change="ffmpegChange">
+                                        <button class="btn sm ghost" @click="clickSelectFfmpeg">{{ $t('settings.buttons.browser') }}</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-foot">
+                            <button class="btn ghost" @click="clickOpenGithub">
+                                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.36 1.09 2.93.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.86v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg>
+                                {{ $t('about.github') }}
+                            </button>
+                            <span class="ver">
+                                {{ $t('ui.versionText', { version: version }) }}
+                                <a v-if="newVersion && newVersion !== version" href="javascript:;" @click="clickUpdateApp" style="color: var(--accent); margin-left: 8px;">{{ $t('about.newVersion') }}</a>
+                            </span>
+                        </div>
+                    </section>
+                </main>
+            </div>
+        </div>
+
+        <!-- 右键菜单 -->
+        <div class="ctx" :class="{ show: ctxVisible }" :style="{ left: ctxX + 'px', top: ctxY + 'px' }" @click.stop>
+            <button class="ctx-item" @click="ctxDetail">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.2"/><rect x="13" y="4" width="7" height="7" rx="1.2"/><rect x="4" y="13" width="7" height="7" rx="1.2"/><rect x="13" y="13" width="7" height="7" rx="1.2"/></svg>
+                {{ $t('ui.ctxDetail') }}
+            </button>
+            <button class="ctx-item" @click="ctxOpenFolder">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17V7.5z"/></svg>
+                {{ $t('ui.ctxOpenFolder') }}
+            </button>
+            <button class="ctx-item" v-if="ctxTask && ctxTask.status === taskStatus.done" @click="ctxPlay">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>
+                {{ $t('ui.ctxPlay') }}
+            </button>
+            <button class="ctx-item" @click="ctxCopyUrl">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+                {{ $t('ui.ctxCopyUrl') }}
+            </button>
+            <button class="ctx-item" v-if="ctxTask && ctxTask.status !== taskStatus.done" @click="ctxRedownload">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 6.7"/><path d="M20 5v6h-6"/></svg>
+                {{ $t('ui.ctxRedownload') }}
+            </button>
+            <div class="ctx-sep"></div>
+            <button class="ctx-item danger" @click="ctxDelete">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/></svg>
+                {{ $t('ui.ctxDelete') }}
+            </button>
+        </div>
+
+        <!-- 新建下载弹窗 -->
+        <div class="overlay" :class="{ show: dlg_newtask_visible }" @click.self="closeNewTaskDialog">
+            <div class="dlg">
+                <div class="dlg-head">
+                    <h3>{{ $t('singleDownload.buttons.newTask') }}</h3>
+                </div>
+                <div class="dlg-body">
+                    <div class="row">
+                        <label>{{ $t('newTask.inputs.url.label') }}</label>
+                        <div class="control">
+                            <textarea class="input" v-model="m3u8_url" :placeholder="$t('ui.sourceHolder')"
+                                @input="m3u8UrlChange" @drop.prevent="dropM3U8File" @dragover.prevent @dragenter.prevent></textarea>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <label>{{ $t('newTask.inputs.taskName.label') }}</label>
+                        <div class="control">
+                            <input class="input" v-model="taskName" :placeholder="$t('newTask.inputs.taskName.holder')" style="font-family: var(--font-ui);">
+                        </div>
+                    </div>
+                    <div class="two-col">
+                        <div class="row" v-if="playlists.length">
+                            <label>{{ $t('newTask.inputs.quality.label') }}</label>
+                            <div class="control">
+                                <select class="select" v-model="playlistUri" @change="qualityChange">
+                                    <option v-for="playlist in playlists" :key="playlist.uri" :value="playlist.uri">{{ getPlaylistLabel(playlist) }}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <label>{{ $t('newTask.inputs.tags.label') }}</label>
+                            <div class="control">
+                                <select class="select" v-model="taskTag" @change="clickChangeTaskTag">
+                                    <option v-for="category in config_categories" :key="category.tag" :value="category.tag">{{ category.tag }}</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <label>{{ $t('newTask.inputs.httpHeaders.label') }}</label>
+                        <div class="control">
+                            <textarea class="input" v-model="headers" :placeholder="$t('ui.headersHolder')"></textarea>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <label>{{ $t('newTask.inputs.privateKey.label') }}</label>
+                        <div class="control">
+                            <input class="input" v-model="myKeyIV" :placeholder="$t('newTask.inputs.privateKey.holder')" style="font-family: var(--font-mono);">
+                        </div>
+                    </div>
+                    <div class="row" v-if="m3u8_url && m3u8_url.startsWith('file:///')">
+                        <label>{{ $t('newTask.inputs.urlPrefix.label') }}</label>
+                        <div class="control">
+                            <input class="input" v-model="m3u8_url_prefix" :placeholder="$t('newTask.inputs.urlPrefix.holder')" style="font-family: var(--font-mono);">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <label>{{ $t('newTask.inputs.merge.label') }}</label>
+                        <div class="control">
+                            <label class="switch">
+                                <input type="checkbox" v-model="taskIsDelTs">
+                                <span class="track"></span>
+                                {{ $t('newTask.inputs.merge.holder') }}
+                            </label>
+                        </div>
+                    </div>
+                    <div class="dlg-desc" v-if="addTaskMessage">{{ addTaskMessage }}</div>
+                </div>
+                <div class="dlg-foot">
+                    <button class="btn ghost" @click="closeNewTaskDialog">{{ $t('ui.cancel') }}</button>
+                    <button class="btn primary" @click="clickNewTaskOK">{{ $t('newTask.buttons.confirm') }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 删除任务弹窗 -->
+        <div class="overlay" :class="{ show: dlg_deltask_visible }" @click.self="closeDelete">
+            <div class="dlg dlg-sm">
+                <div class="dlg-head">
+                    <h3>{{ $t('deleteTask.title') }}</h3>
+                </div>
+                <div class="dlg-body">
+                    <div class="dlg-desc">
+                        {{ $t('ui.deleteDesc') }} <b>「{{ dlg_deltask_name }}」</b>{{ $t('ui.deleteDescTail') }}
+                    </div>
+                    <label class="radio-card">
+                        <input type="radio" name="delmode" v-model="dlg_deltask_isDelFile" :value="false">
+                        <div>
+                            <b>{{ $t('ui.deleteRecord') }}</b>
+                            <span>{{ $t('ui.deleteRecordHint') }}</span>
+                        </div>
+                    </label>
+                    <label class="radio-card danger">
+                        <input type="radio" name="delmode" value="file" v-model="dlg_deltask_isDelFile" :value="true">
+                        <div>
+                            <b>{{ $t('ui.deleteFile') }}</b>
+                            <span>{{ $t('ui.deleteFileHint') }}</span>
+                        </div>
+                    </label>
+                </div>
+                <div class="dlg-foot">
+                    <button class="btn ghost" @click="closeDelete">{{ $t('ui.cancel') }}</button>
+                    <button class="btn danger" @click="confirmDelete">{{ $t('ui.deleteConfirm') }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 任务详情弹窗 -->
+        <div class="overlay" :class="{ show: dlg_taskdetail_visible }" @click.self="closeDetail">
+            <div class="dlg dlg-lg">
+                <div class="dlg-head">
+                    <h3>{{ $t('taskDetail.title') }}</h3>
+                </div>
+                <div class="dlg-body">
+                    <div class="dlg-desc" style="padding-top: 4px;">{{ dlg_taskdetail_task ? dlg_taskdetail_task.taskName : '—' }}</div>
+
+                    <div class="filters" style="margin: 12px 0 10px;">
+                        <span class="stat ok">{{ $t('taskDetail.labels.succeeded') }} {{ dlg_taskdetail_stats.succeeded }}</span>
+                        <span class="stat bad">{{ $t('taskDetail.labels.failed') }} {{ dlg_taskdetail_stats.failed }}</span>
+                        <span class="stat">{{ $t('taskDetail.labels.downloading') }} {{ dlg_taskdetail_stats.downloading }}</span>
+                        <span class="stat">{{ $t('taskDetail.labels.pending') }} {{ dlg_taskdetail_stats.pending }}</span>
+                        <span class="vline" style="width:1px;height:10px;background:var(--line-2);"></span>
+                        <span class="state-text warn">{{ $t('ui.totalSegments', { total: dlg_taskdetail_stats.total, percent: detailPercent }) }}</span>
+                    </div>
+
+                    <div class="progress live" style="height: 6px;">
+                        <i :style="{ width: detailPercent + '%' }"></i>
+                    </div>
+
+                    <div class="matrix-head">
+                        <span class="mtitle">{{ $t('ui.matrix') }}</span>
+                        <div class="legend">
+                            <span><i class="lg-done"></i>{{ $t('taskDetail.labels.succeeded') }}</span>
+                            <span><i class="lg-fail"></i>{{ $t('taskDetail.labels.failed') }}</span>
+                            <span><i class="lg-dl"></i>{{ $t('taskDetail.labels.downloading') }}</span>
+                            <span><i class="lg-pending"></i>{{ $t('taskDetail.labels.pending') }}</span>
+                        </div>
+                        <button class="chip-btn sm" :class="{ active: detailOnlyFail }" @click="detailOnlyFail = !detailOnlyFail">{{ $t('ui.onlyFail') }}</button>
+                    </div>
+
+                    <div class="matrix" :class="{ 'focus-fail': detailOnlyFail }" v-if="dlg_taskdetail_stats.total">
+                        <span class="cell" v-for="(st, i) in dlg_taskdetail_statuses" :key="i"
+                            :data-s="cellState(st)" :title="'#' + (i + 1) + ' · ' + statusLabel(st)"></span>
+                    </div>
+                    <div class="list-empty" v-else>
+                        <span class="mono-inline">{{ $t('taskDetail.tips.empty') }}</span>
+                    </div>
+                </div>
+                <div class="dlg-foot">
+                    <button class="btn ghost" @click="detailOpenFolder">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17V7.5z"/></svg>
+                        {{ $t('ui.openFolder') }}
+                    </button>
+                    <span class="spacer"></span>
+                    <button class="btn" @click="closeDetail">{{ $t('ui.close') }}</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 分类弹窗 -->
+        <div class="overlay" :class="{ show: dlg_category_visible }" @click.self="closeCategory">
+            <div class="dlg dlg-sm">
+                <div class="dlg-head">
+                    <h3>{{ dlg_category_title }}</h3>
+                </div>
+                <div class="dlg-body">
+                    <template v-if="dlg_category_action === 'delete'">
+                        <div class="dlg-desc">
+                            {{ $t('ui.categoryDeleteDesc') }} <b>{{ categoryForm.category }}</b>
+                        </div>
+                    </template>
+                    <template v-else>
+                        <div class="row">
+                            <label>{{ $t('settings.dialog.category.inputs.label') }}</label>
+                            <div class="control">
+                                <input class="input" v-model="categoryForm.category" :maxlength="20"
+                                    :placeholder="$t('settings.dialog.category.inputs.holder')" style="font-family: var(--font-ui);">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <label>{{ $t('settings.dialog.category.inputs.saveFolder') }}</label>
+                            <div class="control">
+                                <input class="input" readonly :type="categoryForm.star ? 'password' : 'text'" :value="categoryForm.saveFolder"
+                                    :placeholder="$t('settings.inputs.saveFolder.holder')">
+                                <button class="btn sm ghost" @click="clickOpenDir">{{ $t('settings.buttons.browser') }}</button>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <label></label>
+                            <div class="control">
+                                <label class="switch">
+                                    <input type="checkbox" v-model="categoryForm.star">
+                                    <span class="track"></span>
+                                    {{ $t('settings.dialog.category.inputs.star') }}
+                                </label>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <div class="dlg-foot">
+                    <button class="btn ghost" @click="closeCategory">{{ $t('ui.cancel') }}</button>
+                    <button class="btn" :class="dlg_category_action === 'delete' ? 'danger' : 'primary'" @click="submitCategory">{{ $t('deleteTask.buttons.ok') }}</button>
+                </div>
+            </div>
+        </div>
+
     </div>
+
     <script src="lang/en.js"></script>
     <script src="lang/zh-CN.js"></script>
     <script src="lib/vue/vue.js"></script>
     <script src="lib/vue/vue-i18n.js"></script>
     <script src="lib/element.ui/index.js"></script>
     <script src="scripts/app-main.js"></script>
-    <script src="lib/Valine/Valine.min.js"></script>
-
-    <script>
-        var GUEST_INFO = ['nick', 'mail', 'link'];
-        var guest_info = 'nick'.split(',').filter(function (item) {
-            return GUEST_INFO.indexOf(item) > -1
-        });
-        // console.log(guest_info)
-        var notify = 'false' == true;
-        var verify = 'false' == true;
-        // new Valine({
-        //     el: '.vcomment',
-        //     notify: notify,
-        //     verify: verify,
-        //     appId: "dYhmAWg45dtYACWfTUVR2msp-gzGzoHsz",
-        //     appKey: "SbuBYWY21MPOSVUCTHdVlXnx",
-        //     placeholder: "可以在这里进行咨询交流",
-        //     pageSize: '100',
-        //     avatar: 'mm',
-        //     lang: 'zh-cn',
-        //     meta: guest_info,
-        //     recordIP: true,
-        //     path: '/m3u8-downloader'
-        // });
-    </script>
 </body>
 
 </html>

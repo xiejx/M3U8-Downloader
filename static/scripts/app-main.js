@@ -1,1185 +1,899 @@
-const { ipcRenderer } = require('electron');
-const { shell } = require('electron');
-// const isDev = require('electron-is-dev');
+const { ipcRenderer, clipboard } = require('electron')
+const path = require('path')
 
-window.current_tag = ''
+const DEFAULT_LANGUAGE = 'en'
+
+Vue.use(VueI18n)
 
 const i18n = new VueI18n({
-    locale: 'en',
+    locale: DEFAULT_LANGUAGE,
     messages: {
-        en, 'zh-cn': zhCN
-    }
-});
+        'en': en,
+        'zh-CN': zhCN,
+    },
+    silentTranslationWarn: true,
+})
 
-const _app = new Vue({
-    i18n,
+if (window.ELEMENT) {
+    Vue.use(ELEMENT, { i18n: (key, value) => i18n.t(key, value) })
+}
+
+const WORKING_STATUS = [
+    taskStatus.parsingM3U8ok,
+    taskStatus.parsingLiveOk,
+    taskStatus.multiAddOk,
+    taskStatus.initializing,
+    taskStatus.merging,
+    taskStatus.downloadMerging,
+    taskStatus.downloading,
+    taskStatus.startMerge,
+    taskStatus.downloadLiveStreaming,
+    taskStatus.checkM3U8url,
+]
+
+const FAILED_STATUS = [
+    taskStatus.parsingFailed,
+    taskStatus.failedMultipleTimes,
+    taskStatus.mergeFaild,
+    taskStatus.mergeFailedMsg,
+    taskStatus.downloadFaild,
+    taskStatus.downloadButFaild,
+    taskStatus.saveFolderNoExist,
+]
+
+const SEG_PENDING = 0
+const SEG_DOWNLOADING = 1
+const SEG_DONE = 2
+const SEG_FAILED = 3
+
+let vm = new Vue({
     el: '#app',
-    data: function () {
+    i18n,
+    data() {
         return {
-            taskStatus,
-            isDev: false,
             version: '',
             newVersion: '',
-            newVersion_download_url: 'https://github.com/12343954/M3U8-Downloader/releases',
-            languages: [{ lang: 'English', value: 'en' }, { lang: '中文', value: 'zh-cn' }],
-            m3u8_url: '',
-            m3u8_urls: '',
-            m3u8_audio_url: '',
-            m3u8_url_prefix: '',
-            ts_dir: '',
-            ts_folder: '',
-            ts_urls: [],
-            dlg_header_visible: false,
-            dlg_newtask_visible: false,
-            dlg_deltask_visible: false,
-            dlg_deltask_id: null,
-            dlg_deltask_name: '',
-            dlg_deltask_isDelFile: true,
-            dlg_taskdetail_visible: false,
-            dlg_taskdetail_id: null,
-            dlg_taskdetail_statuses: [],
-            dlg_category_visible: false,
-            dlg_category_title: '',
-            dlg_category_modify_name: '',
-            dlg_category_modify_from: '',
-            dlg_category_input_type: 'text',
-            dlg_category_action: false,
-            config_save_dir: '',
-            config_ffmpeg: '',
-            config_proxy: '',
-            config_downloadConcurrency: 3,
-            config_downloadMaxRetries: 10,
+            platform: process.platform,
+
+            view: 'download',
+
+            searchText: '',
+            stateFilter: 'all',
+            catFilter: 'all',
+
+            allVideos: [],
+
+            languages: [
+                { lang: 'English', value: 'en' },
+                { lang: '简体中文', value: 'zh-CN' },
+            ],
+
             config_theme: 'dark',
-            config_language: 'en',
+            config_language: DEFAULT_LANGUAGE,
             config_closeAppBehavior: 0,
-            config_tags: [],
-            config_categories: [],  //{tag,dir}
-            current_tag: '',
-            current_tag_count: 0,
-            input_tag_value: '',
-            input_tag_visible: false,
+            config_categories: [],
+            config_proxy: '',
+            config_downloadConcurrency: 5,
+            config_downloadMaxRetries: 3,
+            config_ffmpeg: '',
+
+            // 新建任务
+            taskTag: '',
             headers: '',
             myKeyIV: '',
-            myLocalKeyIV: '',
+            m3u8_url: '',
             taskName: '',
-            taskTag: '',
             taskIsDelTs: true,
-            allVideos: [],
-            tabMain: 'tab1_download',
-            tabPane: 'tab1_singleDownload',
-            tsMergeType: 'speed',
-            tsMergeProgress: 0,
-            tsMergeStatus: '',
-            tsMergeMp4Path: '',
-            tsMergeMp4Dir: '',
-            tsTaskName: '',
-            downloadSpeed: '0 MB/s',
+            m3u8_url_prefix: '',
+            m3u8_audio_url: '',
             playlists: [],
             playlistUri: '',
             addTaskMessage: '',
-            navigatorInput: '',
-            //navigatorUrl:'about:blank',
-            navigatorUrl: 'https://haokan.baidu.com/?sfrom=baidu-top',
-            currentUserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36 Edg/114.0.1823.41",
-            browserVideoUrls: [],
-            platform: '',
-            pager_pageSize: 20,
-            pager_currPage: 1,
-            pager_totalCount: 0,
-            pager_data: [],
-            categoryForm: {
-                category: '',
-                saveFolder: '',
-                inputType: 'text',
-                star: false,
-            },
-            categoryRules: {} // Initialize as empty, will be set in created hook
+            dlg_newtask_visible: false,
+
+            // 删除任务
+            dlg_deltask_visible: false,
+            dlg_deltask_id: '',
+            dlg_deltask_name: '',
+            dlg_deltask_isDelFile: false,
+
+            // 任务详情
+            dlg_taskdetail_visible: false,
+            dlg_taskdetail_id: '',
+            dlg_taskdetail_statuses: [],
+            detailOnlyFail: false,
+
+            // 合并
+            ts_folder: '',
+            ts_dir: '',
+            ts_urls: [],
+            tsTaskName: '',
+            tsMergeType: 'speed',
+            tsMergeDelTs: true,
+            tsMergeProgress: 0,
+            tsMergeStatus: '',
+            tsMergeLog: [],
+            tsMergeMp4Path: '',
+            tsMergeMp4Dir: '',
+
+            // 分类
+            dlg_category_visible: false,
+            dlg_category_action: 'add',
+            dlg_category_title: '',
+            dlg_category_modify_name: '',
+            dlg_category_index: -1,
+            categoryForm: { category: '', saveFolder: '', star: false },
+
+            // 右键菜单
+            ctxVisible: false,
+            ctxTask: null,
+            ctxX: 0,
+            ctxY: 0,
         }
     },
-    created() {
-        let that = this;
-        // Define rules after the instance is created to ensure methods are available
-        that.categoryRules = {
-            category: [
-                {
-                    validator: (rule, value, callback) => {
-                        if (!value) {
-                            return callback(new Error(
-                                i18n.t('validateMessage.notEmpty', {
-                                    name: i18n.t('settings.dialog.category.inputs.label')
-                                })));
-                        }
-
-                        let categories = that.config_categories;
-                        if (that.dlg_category_action == 'modify') {
-                            categories = that.config_categories.filter(p => p.tag.toLowerCase() != that.dlg_category_modify_name.toLowerCase())
-                        }
-
-                        if (categories.some(p => p.tag.toLowerCase() == value.toLowerCase())) {
-                            return callback(new Error(
-                                i18n.t('validateMessage.nameCannotBe', {
-                                    name: i18n.t('settings.dialog.category.inputs.label'),
-                                    except: categories.map(p => p.tag).join(', ')
-                                })));
-                        }
-                        callback();
-                    },
-                    trigger: 'change'
+    computed: {
+        taskStatus() {
+            return taskStatus
+        },
+        stateCounts() {
+            const counts = { all: this.allVideos.length, downloading: 0, done: 0, failed: 0, paused: 0 }
+            this.allVideos.forEach(o => {
+                counts[this.stateOf(o)]++
+            })
+            return counts
+        },
+        catCounts() {
+            const counts = {}
+            this.allVideos.forEach(o => {
+                const tag = o.tag || ''
+                counts[tag] = (counts[tag] || 0) + 1
+            })
+            return counts
+        },
+        filteredTasks() {
+            const keyword = this.searchText.trim().toLowerCase()
+            return this.allVideos.filter(o => {
+                if (this.catFilter !== 'all' && o.tag !== this.catFilter) return false
+                if (this.stateFilter !== 'all' && this.stateOf(o) !== this.stateFilter) return false
+                if (keyword) {
+                    const name = `${o.taskName || ''}`.toLowerCase()
+                    const url = `${o.url || ''}`.toLowerCase()
+                    if (!name.includes(keyword) && !url.includes(keyword)) return false
                 }
-            ],
-            saveFolder: [
-                {
-                    validator: (rule, value, callback) => {
-                        if (!value) {
-                            return callback(new Error(
-                                i18n.t('validateMessage.mustSelect', {
-                                    name: i18n.t('settings.dialog.category.inputs.saveFolder')
-                                })
-                            ));
-                        }
-                        callback();
-                    },
-                    trigger: 'change'
-                }
-            ]
-        };
+                return true
+            })
+        },
+        activeCount() {
+            return this.allVideos.filter(o => this.isTaskRunning(o.status)).length
+        },
+        mergeOutputDir() {
+            return this.ts_folder ? path.dirname(this.ts_folder) : ''
+        },
+        dlg_taskdetail_task() {
+            return this.allVideos.find(o => o.id === this.dlg_taskdetail_id)
+        },
+        dlg_taskdetail_stats() {
+            const stats = { total: 0, succeeded: 0, failed: 0, downloading: 0, pending: 0 }
+            this.dlg_taskdetail_statuses.forEach(st => {
+                stats.total++
+                if (st === SEG_DONE) stats.succeeded++
+                else if (st === SEG_FAILED) stats.failed++
+                else if (st === SEG_DOWNLOADING) stats.downloading++
+                else stats.pending++
+            })
+            return stats
+        },
+        detailPercent() {
+            const stats = this.dlg_taskdetail_stats
+            if (!stats.total) return 0
+            return Math.round((stats.succeeded + stats.failed) * 100 / stats.total)
+        },
+    },
+    mounted() {
+        this.systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
+        this.onSystemThemeChange = () => {
+            if (this.config_theme === 'system') this.applyTheme('system')
+        }
+        this.systemTheme.addEventListener('change', this.onSystemThemeChange)
 
-        // 跟随系统时，随系统主题实时切换
-        that.themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
-        that.onThemeMediaChange = () => {
-            if (that.config_theme === 'system') that.applyTheme('system');
-        };
-        that.themeMedia.addEventListener
-            ? that.themeMedia.addEventListener('change', that.onThemeMediaChange)
-            : that.themeMedia.addListener(that.onThemeMediaChange);
+        document.addEventListener('click', this.hideCtx)
+        document.addEventListener('keydown', this.onKeyDown)
+
+        this.applyTheme(this.config_theme)
+
+        ipcRenderer.on('message', (event, message) => {
+            if (!message) return
+            if (message.downloadSpeed != null) return
+
+            this.version = message.version || ''
+            if (message.platform) this.platform = message.platform
+            this.allVideos = message.videoDatas || []
+
+            this.config_categories = message.config_categories || []
+            this.config_proxy = message.config_proxy || ''
+            this.config_downloadConcurrency = Number(message.config_downloadConcurrency) || 5
+            this.config_downloadMaxRetries = Number(message.config_downloadMaxRetries) || 3
+            this.config_ffmpeg = message.config_ffmpeg || ''
+            this.config_closeAppBehavior = Number(message.config_closeAppBehavior) || 0
+            this.config_theme = message.config_theme || 'dark'
+            this.config_language = message.config_language || DEFAULT_LANGUAGE
+            this.taskTag = message.config_taskTag || (this.config_categories[0] && this.config_categories[0].tag) || ''
+
+            if (i18n.locale !== this.config_language) i18n.locale = this.config_language
+            this.applyTheme(this.config_theme)
+
+            if (this.newVersion == '') {
+                ipcRenderer.send('check-update')
+            }
+        })
+
+        ipcRenderer.on('task-add-reply', (event, reply) => {
+            this.onTaskAddReply(reply || {})
+        })
+
+        ipcRenderer.on('task-notify-create', (event, video) => {
+            if (!video) return
+            const index = this.allVideos.findIndex(o => o.id === video.id)
+            if (index === -1) this.allVideos.unshift(video)
+            else this.allVideos.splice(index, 1, video)
+        })
+
+        ipcRenderer.on('task-notify-update', (event, video) => {
+            if (!video) return
+            const index = this.allVideos.findIndex(o => o.id === video.id)
+            if (index === -1) this.allVideos.unshift(video)
+            else this.allVideos.splice(index, 1, video)
+        })
+
+        ipcRenderer.on('task-notify-end', (event, video) => {
+            if (!video) return
+            const index = this.allVideos.findIndex(o => o.id === video.id)
+            if (index === -1) this.allVideos.unshift(video)
+            else this.allVideos.splice(index, 1, video)
+        })
+
+        ipcRenderer.on('delvideo-reply', (event, task) => {
+            if (!task) return
+            const index = this.allVideos.findIndex(o => o.id === task.id)
+            if (index !== -1) this.allVideos.splice(index, 1)
+        })
+
+        ipcRenderer.on('task-detail-snapshot', (event, data) => {
+            if (!data || data.id !== this.dlg_taskdetail_id) return
+            this.dlg_taskdetail_statuses = data.statuses || []
+        })
+
+        ipcRenderer.on('task-detail-update', (event, data) => {
+            if (!data || data.id !== this.dlg_taskdetail_id) return
+            const changes = data.changes || []
+            changes.forEach(([idx, status]) => {
+                if (this.dlg_taskdetail_statuses[idx] !== undefined) {
+                    this.$set(this.dlg_taskdetail_statuses, idx, status)
+                }
+            })
+        })
+
+        ipcRenderer.on('start-merge-ts-status', (event, data) => {
+            this.onMergeStatus(data || {})
+        })
+
+        ipcRenderer.on('open-select-m3u8-reply', (event, data) => {
+            if (data) {
+                this.m3u8_url = data
+                this.m3u8UrlChange()
+            }
+        })
+
+        ipcRenderer.on('open-directory-reply', (event, index, data) => {
+            if (index == -1) {
+                this.categoryForm.saveFolder = data
+            } else {
+                this.config_categories = data || []
+                if (this.catFilter !== 'all' && !this.config_categories.some(c => c.tag === this.catFilter)) {
+                    this.catFilter = 'all'
+                }
+                if (this.config_categories.length && !this.config_categories.some(c => c.tag === this.taskTag)) {
+                    this.taskTag = this.config_categories[0].tag
+                }
+            }
+        })
+
+        ipcRenderer.on('open-select-ts-dir-reply', (event, dir) => {
+            if (!dir) return
+            this.ts_folder = dir
+            this.ts_dir = dir
+        })
+
+        ipcRenderer.on('open-select-ts-select-reply', (event, files) => {
+            this.setTsFiles(files || [])
+        })
+
+        ipcRenderer.on('auto-manualMerge-reply', (event, name, files) => {
+            if (name) this.tsTaskName = name
+            if (files) this.setTsFiles(files)
+            this.view = 'merge'
+        })
+
+        ipcRenderer.on('open-select-ffmpeg-reply', (event, ffmpegPath) => {
+            if (!ffmpegPath) return
+            this.config_ffmpeg = ffmpegPath
+            ipcRenderer.send('set-config', { key: 'ffmpegPath', value: ffmpegPath })
+        })
+
+        ipcRenderer.on('check-update-reply', (event, version) => {
+            this.newVersion = version || ''
+        })
+    },
+    beforeDestroy() {
+        document.removeEventListener('click', this.hideCtx)
+        document.removeEventListener('keydown', this.onKeyDown)
+        this.systemTheme && this.systemTheme.removeEventListener('change', this.onSystemThemeChange)
     },
     methods: {
-        timeBeauty: (time) => timeBeauty(time),
-        clickNone: () => { },
-        applyTheme: function (source) {
-            const dark = source === 'system'
-                ? window.matchMedia('(prefers-color-scheme: dark)').matches
-                : source !== 'light';
-            document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        /* ================= 通用 ================= */
+        setView(view) {
+            this.view = view
         },
-        themeChange: function (value) {
-            this.config_theme = value;
-            this.applyTheme(value);
-            ipcRenderer.send('set-config', { key: 'theme', value });
+        applyTheme(theme) {
+            const resolved = theme === 'system'
+                ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                : theme
+            document.documentElement.setAttribute('data-theme', resolved === 'light' ? 'light' : 'dark')
         },
-        installEvent: function (e) {
-            let that = this;
-
-            ipcRenderer.on('message', this.message.bind(this));
-
-            ipcRenderer.on('open-select-m3u8-reply', function (event, data) {
-                that.m3u8_url = data;
-            });
-
-            ipcRenderer.on('open-select-ts-dir-reply', function (event, data) {
-                // console.log(data)
-                that.ts_folder = data
-                that.ts_dir = data;
-                let sep = '/';
-                if (data.split('\\').length > 1) sep = '\\'
-
-                that.tsTaskName = data.substr(data.lastIndexOf(sep) + 1)
-            });
-
-            ipcRenderer.on('open-select-ts-select-reply', function (event, data) {
-                that.ts_urls = data;
-                // that.ts_dir = `选择了 [${that.ts_urls.length}] 个视频`;
-                that.ts_dir = i18n.t('mergeTS.tips.select', { total: that.ts_urls.length })
-                // console.log(data)
-            });
-
-            ipcRenderer.on('task-add-reply', function (event, data) {
-                // console.log('1. task-add-reply', data)
-                const { code, message, object } = data;
-                // object.time = new Date();
-
-                if (code != 1) {
-                    that.dlg_newtask_visible = false;
-                    that.taskName = '';
-                    that.m3u8_url = '';
-                    that.m3u8UrlChange();
-                    if (!that.allVideos.some(p => p.id == object.id)) {
-                        // if (code == -1) {
-                        //     object.status = taskStatus.parsingFailed;
-                        //     object.statusText = i18n.t('taskStatus.parsingFailed')
-                        // }
-                        that.allVideos?.unshift(object);
-
-                        setTimeout(() => {
-                            // add animation bounceIn
-                            let li = document.querySelector(`.TaskList > li[data-id="${object.id}"]`);
-                            li?.classList.add("animate__animated", "animate__bounceIn");
-                            li?.addEventListener('animationend', () => {
-                                li?.classList.remove("animate__animated", "animate__bounceIn")
-                            });
-                        }, 200);
-                    }
-
-                    that.notifyTaskStatus(code, message);
-
-                    if (code == -1) {
-                        setTimeout(() => {
-                            let li = document.querySelector(`.TaskList > li[data-id="${object.id}"]`);
-                            li?.classList.add("animate__animated", "animate__bounceOut");
-                            li?.addEventListener('animationend', () => {
-                                const idx = that.allVideos.findIndex(p => p.id == object.id);
-                                idx != -1 && that.allVideos.splice(idx, 1);
-                            });
-                        }, 5000);
-                    }
-                    return;
-                }
-                that.playlists = data.playlists;
-                that.playlistUri = that.playlists[0].uri;
-                if ('audio' in that.playlists[0]) that.m3u8_audio_url = that.playlists[0].audio;
-                that.addTaskMessage = i18n.t('newTask.tips.addTaskMessage')// "请选择一种画质";
-            });
-
-            ipcRenderer.on('task-notify-create', function (event, data) {
-                // console.log('2. task-notify-create', data)
-
-                if (!that.allVideos.some(k => k.id == data.id)) {
-                    that.allVideos.splice(0, 0, data); //splice=replace
-                    // that.pagination()
-                }
-            });
-
-            ipcRenderer.on('task-notify-update', function (event, data) {
-                // console.log('3. task-notify-update', data)
-                for (let idx = 0; idx < that.allVideos.length; idx++) {
-                    let e = that.allVideos[idx];
-                    if (e.id == data.id) {
-                        Vue.set(that.allVideos, idx, data);
-                        return;
-                    }
-                }
-            });
-
-            ipcRenderer.on('task-notify-end', function (event, data) {
-                for (let idx = 0; idx < that.allVideos.length; idx++) {
-                    let e = that.allVideos[idx];
-                    if (e.id == data.id) {
-                        Vue.set(that.allVideos, idx, data);
-                        return;
-                    }
-                }
-            });
-
-            ipcRenderer.on('task-detail-snapshot', function (event, data) {
-                if (!that.dlg_taskdetail_visible || data.id != that.dlg_taskdetail_id) return;
-                that.dlg_taskdetail_statuses = data.statuses || [];
-            });
-
-            ipcRenderer.on('task-detail-update', function (event, data) {
-                if (!that.dlg_taskdetail_visible || data.id != that.dlg_taskdetail_id) return;
-                const changes = data.changes || [];
-                for (let i = 0; i < changes.length; i++) {
-                    const idx = changes[i][0], status = changes[i][1];
-                    if (idx >= 0 && idx < that.dlg_taskdetail_statuses.length) {
-                        Vue.set(that.dlg_taskdetail_statuses, idx, status);
-                    }
-                }
-            });
-
-            ipcRenderer.on('start-merge-ts-status', function (event, msg) {
-
-                if (msg.progress != -1) that.tsMergeProgress = msg.progress;
-                if (msg.status) that.tsMergeStatus = msg.status;
-                if (msg.code == 1) {
-                    that.tsMergeMp4Dir = msg.dir;
-                    that.tsMergeMp4Path = msg.path;
-                }
-            });
-
-            ipcRenderer.on('delvideo-reply', function (event, data) {
-                // for (let idx = 0; idx < that.allVideos.length; idx++) {
-                //     let e = that.allVideos[idx];
-                //     if (e.id == data.id) {
-                //         that.allVideos.splice(idx, 1);
-                //         return;
-                //     }
-                // }
-            });
-
-            ipcRenderer.on('check-update-reply', function (event, data) {
-                that.newVersion = data
-            })
-
-            ipcRenderer.on(`auto-manualMerge-reply`, function (event, videoName, tsFiles) {
-                that.tabPane = `tab1_mergeTS`;
-                that.tsTaskName = videoName;
-                that.ts_urls = tsFiles;
-                that.ts_dir = i18n.t('mergeTS.tips.select', { total: that.ts_urls.length })
-            });
-
-            ipcRenderer.on('open-directory-reply', function (event, index, data) {
-                if (index == -1) {
-                    that.categoryForm.saveFolder = data;
-                } else {
-                    that.config_categories = data;
-                }
-            });
-
-            let browser = document.querySelector('#browser');
-            browser?.addEventListener('new-window', (e) => {
-                const protocol = (new URL(e.url)).protocol
-                if (protocol === 'http:' || protocol === 'https:') {
-                    browser?.loadURL(e.url)
-                }
-            });
-            let navigateEvent = (e) => {
-                that.navigatorInput = e.url;
-                that.browserVideoUrls = [];
+        onKeyDown(e) {
+            if (e.key !== 'Escape') return
+            if (this.ctxVisible) {
+                this.hideCtx()
+                return
             }
-            browser?.addEventListener('will-navigate', navigateEvent);
-            browser?.addEventListener('did-navigate', navigateEvent);
-            browser?.addEventListener('dom-ready', () => {
-                browser?.openDevTools();
-            });
+            if (this.dlg_category_visible) return this.closeCategory()
+            if (this.dlg_taskdetail_visible) return this.closeDetail()
+            if (this.dlg_deltask_visible) return this.closeDelete()
+            if (this.dlg_newtask_visible) return this.closeNewTaskDialog()
         },
-        message: function (_, { version, isDev, downloadSpeed,
-            config_ffmpeg, config_save_dir, config_proxy, config_language, config_closeAppBehavior,
-            config_downloadConcurrency, config_downloadMaxRetries,
-            config_theme,
-            videoDatas, browserVideoItem, platform, config_tags, config_taskTag, config_categories }) {
-            this.isDev = isDev;
-            if (version) {
-                this.version = version
-                this.newVersion = version
+
+        /* ================= 状态 ================= */
+        isTaskRunning(status) {
+            return WORKING_STATUS.indexOf(status) !== -1
+        },
+        stateOf(o) {
+            if (o.status === taskStatus.done || o.status === taskStatus.noFFMPEG) return 'done'
+            if (o.status === taskStatus.pause) return 'paused'
+            if (FAILED_STATUS.indexOf(o.status) !== -1) return 'failed'
+            return 'downloading'
+        },
+        statusTextClass(o) {
+            const state = this.stateOf(o)
+            if (state === 'done') return 'ok'
+            if (state === 'failed') return 'err'
+            if (state === 'paused') return ''
+            return 'warn'
+        },
+        canToggle(o) {
+            return o.status !== taskStatus.done
+                && o.status !== taskStatus.noFFMPEG
+                && o.status !== taskStatus.mergeFaild
+                && o.status !== taskStatus.parsingFailed
+                && o.status !== taskStatus.saveFolderNoExist
+        },
+        taskPercent(o) {
+            if (o.status === taskStatus.done || o.status === taskStatus.noFFMPEG) return 100
+            if (o.isLiving) return 0
+            const total = this.segTotal(o)
+            const done = (o.segment_succeeded != null ? o.segment_succeeded : (o.segment_downloaded || 0))
+            if (!total) return 0
+            return Math.max(0, Math.min(100, Math.round(done * 100 / total)))
+        },
+        stateText(o) {
+            const text = o.statusText || (this.stateOf(o) === 'done' ? this.$t('ui.done') : '')
+            return text.replace(/[\s\u3000]{2,}/g, ' · ')
+        },
+        segTotal(o) {
+            return o.segment_stats_total || o.segment_total || 0
+        },
+        timeText(o) {
+            return o.time || ''
+        },
+        cellState(st) {
+            if (st === SEG_DONE) return 'done'
+            if (st === SEG_FAILED) return 'fail'
+            if (st === SEG_DOWNLOADING) return 'dl'
+            return 'pending'
+        },
+        statusLabel(st) {
+            if (st === SEG_DONE) return this.$t('taskDetail.labels.succeeded')
+            if (st === SEG_FAILED) return this.$t('taskDetail.labels.failed')
+            if (st === SEG_DOWNLOADING) return this.$t('taskDetail.labels.downloading')
+            return this.$t('taskDetail.labels.pending')
+        },
+
+        /* ================= 窗口 ================= */
+        clickMinWindow() {
+            ipcRenderer.send('window-minimize')
+        },
+        clickMaxWindow() {
+            ipcRenderer.send('window-toggle-maximize')
+        },
+        clickClose() {
+            ipcRenderer.send('hide-windows')
+        },
+
+        /* ================= 任务操作 ================= */
+        openFolder(o) {
+            ipcRenderer.send('openInExplorer', o.videopath || o.dir)
+        },
+        playVideo(o) {
+            o.videopath && ipcRenderer.send('playvideo', o.videopath)
+        },
+        toggleRunning(o) {
+            if (this.isTaskRunning(o.status)) {
+                o.status = taskStatus.pause
+            } else {
+                o.status = taskStatus.downloading
             }
-
-            downloadSpeed && (this.downloadSpeed = downloadSpeed);
-            config_ffmpeg && (this.config_ffmpeg = config_ffmpeg);
-            config_save_dir && (this.config_save_dir = config_save_dir);
-            config_proxy && (this.config_proxy = config_proxy);
-            config_downloadConcurrency != null && (this.config_downloadConcurrency = config_downloadConcurrency);
-            config_downloadMaxRetries != null && (this.config_downloadMaxRetries = config_downloadMaxRetries);
-            if (config_theme) {
-                this.config_theme = config_theme;
-                this.applyTheme(config_theme);
-            }
-            config_tags && (this.config_tags = config_tags);
-            config_categories && (this.config_categories = config_categories);
-
-            if (config_taskTag) {
-                this.taskTag = config_taskTag;
-            } else if (this.config_tags.length > 0) {
-                this.taskTag = this.config_tags[0];
-            }
-
-            if (config_language) {
-                this.config_language = config_language;
-                i18n.locale = config_language;
-            }
-            this.config_closeAppBehavior = config_closeAppBehavior;
-            if (videoDatas) {
-                this.allVideos = videoDatas;
-                // this.pager_data = this.pagination(this.pager_currPage, this.pager_pageSize, this.allVideos)
-                // this.pager_totalCount = videoDatas.length;
-                // this.pager_data = this.pagination(this.pager_currPage, this.pager_pageSize, videoDatas)
-            }
-            browserVideoItem && (this.browserVideoUrls.push(browserVideoItem))
-            platform && (this.platform = platform);
+            ipcRenderer.send('StartOrStop', o.id)
         },
-        clickNaviagte: function (e) {
-            if (!this.navigatorInput) return;
-            !/^http[s]\:\/\//.test(this.navigatorInput) && (this.navigatorInput = 'http://' + this.navigatorInput);
-            this.navigatorUrl != this.navigatorInput && (this.navigatorUrl = this.navigatorInput);
+        manualMerge(o) {
+            ipcRenderer.send('auto-manualMerge', o.dir)
         },
-        clickAClick: function (e) {
-            e.preventDefault();
-            shell.openExternal(e.target.href);
+        copyUrl(o) {
+            clipboard.writeText(o.url || '')
+            this.$message && this.$message.success(this.$t('ui.copied'))
         },
-        clickStartHookUrl: function (e) {
-            ipcRenderer.send('new-hook-url-window');
+        clickClearTask() {
+            ipcRenderer.send('task-clear')
+            this.allVideos = this.allVideos.filter(o => o.status !== taskStatus.done)
         },
-        clickMinWindow: e => {
-            ipcRenderer.send('window-minimize');
+        openDelete(o) {
+            this.dlg_deltask_id = o.id
+            this.dlg_deltask_name = o.taskName
+            this.dlg_deltask_isDelFile = false
+            this.dlg_deltask_visible = true
         },
-        clickMaxWindow: e => {
-            ipcRenderer.send('window-toggle-maximize');
+        closeDelete() {
+            this.dlg_deltask_visible = false
         },
-        clickClose: function (e) {
-            ipcRenderer.send('hide-windows');
+        confirmDelete() {
+            ipcRenderer.send('delvideo', this.dlg_deltask_id, this.dlg_deltask_isDelFile)
+            this.dlg_deltask_visible = false
         },
-        clickSwitchLang: function (e) {
-            // console.log(this.config_language)
-            i18n.locale = this.config_language;
+        openDetail(o) {
+            this.dlg_taskdetail_id = o.id
+            this.dlg_taskdetail_statuses = []
+            this.detailOnlyFail = false
+            this.dlg_taskdetail_visible = true
+            ipcRenderer.send('task-detail-open', o.id)
         },
-        clickNewTask: function (e) {
-            this.dlg_newtask_visible = true;
-            this.taskName = '';
-            this.m3u8_url = '';
-
-            navigator.clipboard.readText().then(
-                clipText => {
-                    //https://xxx.com/m3u8/824388.m3u8 filmname
-                    if (!clipText) return;
-
-                    if (/http(|s):\/\/(.*)\.((m3u8)|(mp4)|(flv)|(mp3)|(mpd)|(wav))(\?|$)/ig.test(clipText)) {
-                        setTimeout(() => {
-                            this.m3u8_url = clipText;
-                            this.m3u8UrlChange();
-                            // console.log('clipboard', clipText)
-                        }, 200);
-                    }
-                }
-            );
+        closeDetail() {
+            this.dlg_taskdetail_visible = false
+            ipcRenderer.send('task-detail-close')
         },
-        clickNewTaskOK: function (e) {
-            if (this.m3u8_url != '') {
-                let m3u8_url = this.m3u8_url;
-                if (this.playlistUri != '') {
-                    const uri = this.playlistUri;
-                    if (!uri.startsWith('http')) {
-                        m3u8_url = uri[0] == '/' ? (m3u8_url.substr(0, m3u8_url.indexOf('/', 10)) + uri) :
-                            (m3u8_url.replace(/\/[^\/]*((\?.*)|$)/, '/') + uri);
-                    }
-                    else {
-                        m3u8_url = uri;
-                    }
-                }
-                const id = new Date().getTime();
-                if (this.m3u8_audio_url && !this.m3u8_audio_url.startsWith('http')) {
-                    const uri = new URL(this.m3u8_url);
-                    const host = `${uri.protocol}//${uri.host}`
-                    this.m3u8_audio_url = host + this.m3u8_audio_url;
-                }
+        detailOpenFolder() {
+            const task = this.dlg_taskdetail_task
+            if (task) this.openFolder(task)
+        },
 
-                const category = this.config_categories.find(p => p.tag == this.taskTag);
-                if (category.dir == '') {
-                    // this.tabMain = "tab2_settings";
-                    // this.$message({ title: '提示', type: 'error', message: "请先设置存储路径，再开始下载视频, offset: 100, duration: 1000 });
-                    // this.$message({ title: i18n.t('message.title'), type: 'error', message: i18n.t('message.noSaveDir', { category: this.taskTag }), offset: 100, duration: 2000 });
+        /* ================= 右键菜单 ================= */
+        openCtx(e, o) {
+            this.ctxTask = o
+            this.ctxX = Math.min(e.clientX, window.innerWidth - 204)
+            this.ctxY = Math.min(e.clientY, window.innerHeight - 238)
+            this.ctxVisible = true
+        },
+        hideCtx() {
+            this.ctxVisible = false
+        },
+        ctxDetail() {
+            const task = this.ctxTask
+            this.hideCtx()
+            task && this.openDetail(task)
+        },
+        ctxOpenFolder() {
+            const task = this.ctxTask
+            this.hideCtx()
+            task && this.openFolder(task)
+        },
+        ctxPlay() {
+            const task = this.ctxTask
+            this.hideCtx()
+            task && this.playVideo(task)
+        },
+        ctxCopyUrl() {
+            const task = this.ctxTask
+            this.hideCtx()
+            task && this.copyUrl(task)
+        },
+        ctxRedownload() {
+            const task = this.ctxTask
+            this.hideCtx()
+            if (!task) return
+            task.status = taskStatus.downloading
+            ipcRenderer.send('StartOrStop', task.id)
+        },
+        ctxDelete() {
+            const task = this.ctxTask
+            this.hideCtx()
+            task && this.openDelete(task)
+        },
 
-                    this.$confirm(i18n.t('message.noSaveDir', { category: this.taskTag }), i18n.t('message.title'), {
-                        customClass: 'custom-confirm custom-message-box',
-                        confirmButtonText: i18n.t('deleteTask.buttons.ok'),
-                        cancelButtonText: i18n.t('deleteTask.buttons.cancel'),
-                        cancelButtonClass: 'info',
-                        type: 'warning'
-                    }).then(() => {
-                        this.dlg_category_action = 'modify';
-                        this.dlg_category_modify_name = category.tag;
-                        this.dlg_category_modify_from = 'newTask';
-                        this.dlg_category_title = i18n.t('settings.dialog.category.title.modify');
-                        this.dlg_category_visible = true;
-                        this.categoryForm = {
-                            category: category.tag,
-                            saveFolder: category.dir,
-                            inputType: 'text',
-                            star: category.star
-                        }
-
-                    }).catch(() => {
-                        // this.$message({
-                        //     type: 'info',
-                        //     message: '已取消删除'
-                        // });
-                    });
-
-                    return;
-                }
-
-                ipcRenderer.send('task-add', {
-                    id: id,
-                    url: m3u8_url,
-                    sourceUrl: this.m3u8_url,
-                    audio: this.m3u8_audio_url,
-                    headers: this.headers,
-                    myKeyIV: this.myKeyIV,
-                    taskName: this.taskName || id,
-                    tag: this.taskTag,
-                    dir: category.dir,
-                    taskIsDelTs: this.taskIsDelTs,
-                    url_prefix: this.m3u8_url_prefix,
-                    status: taskStatus.checkM3U8url,
-                    statusText: i18n.t('taskStatus.checkM3U8url')
-                });
-
-                this.addTaskMessage = i18n.t('message.checkM3U8url');// "正在检查链接..."
-            }
-            else {
-                // this.$message({ title: '提示', type: 'error', message: "请输入正确的M3U8-URL或者导入(.m3u8)文件", offset: 100, duration: 1000 });
-                this.$message({ title: i18n.t('message.title'), type: 'error', message: i18n.t('message.m3u8UrlError'), offset: 100, duration: 1000 });
+        /* ================= 新建下载 ================= */
+        resetNewTask() {
+            this.m3u8_url = ''
+            this.taskName = ''
+            this.headers = ''
+            this.myKeyIV = ''
+            this.m3u8_url_prefix = ''
+            this.m3u8_audio_url = ''
+            this.playlists = []
+            this.playlistUri = ''
+            this.addTaskMessage = ''
+            this.taskIsDelTs = true
+        },
+        openNewTaskDialog() {
+            this.resetNewTask()
+            this.dlg_newtask_visible = true
+            const value = clipboard.readText().trim()
+            if (!value || this.m3u8_url) return
+            if (/^(https?:\/\/|file:\/\/\/)/i.test(value) || /\.m3u8(\?|$)/i.test(value)) {
+                this.m3u8_url = value
+                this.m3u8UrlChange()
             }
         },
-        clickClearTask: function (e) {
-            ipcRenderer.send('task-clear');
-            // this.allVideos = this.allVideos.filter(k => k.status != '已完成') || [];
-            this.allVideos = this.allVideos.filter(k => k.status != taskStatus.done) || [];
+        closeNewTaskDialog() {
+            this.dlg_newtask_visible = false
         },
-        clickNewTaskMuti: function (e) {
-            // if (!this.config_save_dir) {
-            //     // this.tabMain = "tab2_settings";
-            //     // this.$message({ title: '提示', type: 'error', message: "请先设置存储路径，再开始下载视频", offset: 100, duration: 1000 });
-            //     this.$message({ title: i18n.t('message.title'), type: 'error', message: i18n.t('message.noSaveDir'), offset: 100, duration: 1000 });
-            //     // this.$message({ title: i18n.t('message.title'), type: 'error', message: i18n.t('message.noSaveDir', { category: this.taskTag }), offset: 100, duration: 1000 });
-            //     return;
-            // }
-            if (this.m3u8_urls != '') {
-                ipcRenderer.send('task-add-muti', {
-                    m3u8_urls: this.m3u8_urls,
-                    headers: this.headers,
-                    taskIsDelTs: this.taskIsDelTs,
-                    myKeyIV: '',
-                    taskName: ''
-                });
-                this.dlg_newtask_visible = false;
-                this.taskName = '';
+        m3u8UrlChange() {
+            const raw = (this.m3u8_url || '').trim()
+            const lines = raw.split(/\r?\n/).filter(line => line.trim() !== '')
+            if (lines.length !== 1) return
+
+            let line = lines[0]
+            let name = ''
+            if (line.includes('----')) {
+                const parts = line.split('----')
+                name = parts.slice(1).join('----').trim()
+            } else {
+                const matched = line.match(/^(https?:\/\/\S+|file:\/\/\/\S+)\s+(.+)$/i)
+                if (matched) name = matched[2].trim()
             }
-            else {
-                // this.$message({ title: '提示', type: 'error', message: "请输入正确的M3U8-URL", offset: 100, duration: 1000 });
-                this.$message({ title: i18n.t('message.title'), type: 'error', message: i18n.t('message.m3u8UrlError'), offset: 100, duration: 1000 });
-            }
+            if (name) this.taskName = name
         },
-        clickDelTaskOK: function (e) {
-            // console.log('delvideo', this.dlg_deltask_id, this.dlg_deltask_isDelFile)
-            const that = this;
-            let li = document.querySelector(`.TaskList > li[data-id="${that.dlg_deltask_id}"]`);
-            li?.classList.add("animate__animated", "animate__bounceOut");
-            li?.addEventListener('animationend', () => {
-                ipcRenderer.send('delvideo', that.dlg_deltask_id, that.dlg_deltask_isDelFile);
-
-                const idx = that.allVideos?.findIndex(p => p.id == that.dlg_deltask_id);
-                idx != -1 && that.allVideos.splice(idx, 1);
-
-                that.dlg_deltask_id = null;
-
-            });
-
-            // that.dlg_deltask_id = null;
-            that.dlg_deltask_visible = false;
-            that.dlg_deltask_name = null;
-            that.dlg_deltask_isDelFile = true;
-
-            // const idx = this.allVideos?.findIndex(p => p.id == this.dlg_deltask_id);
-            // if (idx != -1) {
-            //     this.allVideos.splice(idx, 1);
-            // }
+        getPlaylistLabel(playlist) {
+            const attrs = playlist.attributes || {}
+            const resolution = attrs.RESOLUTION ? `${attrs.RESOLUTION.width}×${attrs.RESOLUTION.height}` : ''
+            const bandwidth = attrs.BANDWIDTH ? `${Math.round(attrs.BANDWIDTH / 1000)} kbps` : ''
+            return [resolution, bandwidth].filter(Boolean).join(' · ') || playlist.uri
         },
-        clickDelTaskCancel: function (e) {
-            this.dlg_deltask_visible = false;
-            this.dlg_deltask_id = null;
-            this.dlg_deltask_name = null;
-            this.dlg_deltask_isDelFile = true;
+        qualityChange() {
+            const playlist = this.playlists.find(p => p.uri === this.playlistUri)
+            this.m3u8_audio_url = playlist && playlist.audio ? playlist.audio : ''
         },
-        clickTaskDetail: function (o) {
-            this.dlg_taskdetail_id = o.id;
-            this.dlg_taskdetail_statuses = [];
-            this.dlg_taskdetail_visible = true;
-            ipcRenderer.send('task-detail-open', o.id);
+        clickChangeTaskTag() {
+            ipcRenderer.send('set-config', { key: 'taskTag', value: this.taskTag })
         },
-        clickCloseTaskDetail: function () {
-            this.dlg_taskdetail_visible = false;
-            this.dlg_taskdetail_id = null;
-            this.dlg_taskdetail_statuses = [];
-            ipcRenderer.send('task-detail-close');
+        clickSelectM3U8() {
+            ipcRenderer.send('open-select-m3u8')
         },
-        statusLabel: function (status) {
-            switch (status) {
-                case 1: return i18n.t('taskDetail.labels.downloading');
-                case 2: return i18n.t('taskDetail.labels.succeeded');
-                case 3: return i18n.t('taskDetail.labels.failed');
-                default: return i18n.t('taskDetail.labels.pending');
-            }
+        dropM3U8File(e) {
+            if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return
+            const file = e.dataTransfer.files[0]
+            this.m3u8_url = `file:///${file.path}`
+            this.m3u8UrlChange()
         },
-        // 只有这些状态代表任务真的在跑，其余状态（暂停/失败/无ffmpeg/直播失败等）不应显示转圈
-        isTaskRunning: function (status) {
-            return [
-                taskStatus.initializing,
-                taskStatus.checkM3U8url,
-                taskStatus.downloading,
-                taskStatus.downloadMerging,
-                taskStatus.startMerge,
-                taskStatus.merging,
-                taskStatus.downloadLiveStreaming
-            ].includes(status);
-        },
-        clickOpenDir: function (e) {
-            ipcRenderer.send("open-directory", -1, null);   //-1 = add new category
-        },
-        clickItemOptData: function (e) {
-            let that = e.target;
-            if (!that.hasAttribute('opt')) that = that.parentElement;
-
-            var opt = that.getAttribute('opt');
-            let data = that.getAttribute('data')
-
-            if (opt == "StartOrStop") {
-                // that.title = that.title == "停止" ? "继续下载" : "停止";
-                this.allVideos.forEach(k => {
-                    if (k.id == data) {
-                        // if (k.status.startsWith('下载'))
-                        //     k.status = k.status.replace('下载', '暂停')
-                        // else
-                        //     k.status = k.status.replace('暂停', '下载')
-                        if (k.status == taskStatus.downloading || k.status == taskStatus.downloadLiveStreaming || k.status == taskStatus.downloadMerging) {
-                            k.status = taskStatus.pause;
-                            k.statusText = i18n.t('taskStatus.pause', { count_downloaded: k.segment_downloaded, count_seg: k.segment_total, percent: percentFormat(k.segment_downloaded, k.segment_total) })
-                        }
-                        else if (k.status == taskStatus.pause) {
-                            if (k.segment_total == k.segment_downloaded) {
-                                k.status = taskStatus.startMerge
-                                k.statusText = i18n.t('taskStatus.startMerge')
-                            } else {
-                                k.status = taskStatus.downloading;
-                                k.statusText = i18n.t('taskStatus.downloading', { count_downloaded: k.segment_downloaded, count_seg: k.segment_total, percent: percentFormat(k.segment_downloaded, k.segment_total) })
-                            }
-                        }
-                        return
-                    }
-                })
-            }
-            else if (opt == 'delvideo') { //&& video.status == '已完'
-                let video = this.allVideos.find(p => p.id == data);
-                this.dlg_deltask_visible = true;
-                this.dlg_deltask_id = data;
-                this.dlg_deltask_name = video.taskName;
-                this.dlg_deltask_isDelFile = true;
-                // console.log(video);
-                return;
-            }
-            else if (opt == 'manualMerge') {
-                // that.tabPane = 'tab1_mergeTS';
-                ipcRenderer.send('auto-manualMerge', data)
+        clickNewTaskOK() {
+            const raw = (this.m3u8_url || '').trim()
+            if (!raw) {
+                this.$message && this.$message.warning(this.$t('message.enterM3U8'))
                 return
             }
 
-            ipcRenderer.send(opt == 'StartOrStop' ? 'task-toggle-running' : opt, data);
-        },
-        clickPlayVideo: function (e) {
-            let id = Number(e.target.getAttribute('data'))
-            const video = this.allVideos.find(p => p.id == id)
-            if (video) {
-                if (video.status == taskStatus.done) {
-                    ipcRenderer.send("playvideo", video.videopath);
-                } else {
-                    ipcRenderer.send("opendir", video.dir);
+            // 批量下载
+            const lines = raw.split(/\r?\n/).filter(line => line.trim() !== '')
+            if (lines.length > 1) {
+                ipcRenderer.send('task-add-muti', {
+                    m3u8_urls: raw,
+                    headers: this.headers,
+                    taskIsDelTs: this.taskIsDelTs,
+                })
+                this.dlg_newtask_visible = false
+                this.resetNewTask()
+                return
+            }
+
+            let url = lines[0].trim()
+            let name = (this.taskName || '').trim()
+            if (url.includes('----')) {
+                const parts = url.split('----')
+                url = parts[0].trim()
+                if (!name) name = parts.slice(1).join('----').trim()
+            } else {
+                const matched = url.match(/^(https?:\/\/\S+|file:\/\/\/\S+)\s+(.+)$/i)
+                if (matched) {
+                    url = matched[1].trim()
+                    if (!name) name = matched[2].trim()
                 }
             }
-        },
-        getPlaylistLabel: function (playlist) {
-            if (!playlist || !playlist.attributes) return '';
-            const attr = playlist.attributes;
-            let bitrate, resolution, codecs;
 
-            if (attr.BANDWIDTH) {
-                // return `码率 - ${attr.BANDWIDTH}`;
-                bitrate = `${i18n.t('unit.bitrate')}: ${attr.BANDWIDTH}`;
-            } else if (attr.bandwidth) {
-                // return `码率 - ${attr.bandwidth}`;
-                bitrate = `${i18n.t('unit.bitrate')}: ${attr.bandwidth}`;
+            let audio = this.m3u8_audio_url
+            if (this.playlists.length && this.playlistUri) {
+                url = this.playlistUri
+                const playlist = this.playlists.find(p => p.uri === this.playlistUri)
+                audio = playlist && playlist.audio ? playlist.audio : ''
             }
 
-            if (attr.RESOLUTION) {
-                // return `分辨率 - ${attr.RESOLUTION.width}x${attr.RESOLUTION.height}`;
-                resolution = `${i18n.t('unit.resolution')}: ${attr.RESOLUTION.width}x${attr.RESOLUTION.height}`;
-            } else if (attr.resolution) {
-                // return `分辨率 - ${attr.resolution.width}x${attr.resolution.height}`;
-                resolution = `${i18n.t('unit.resolution')}: ${attr.resolution.width}x${attr.resolution.height}`;
+            const category = this.config_categories.find(c => c.tag === this.taskTag) || this.config_categories[0]
+            if (!category || !category.dir) {
+                this.$message && this.$message.warning(this.$t('message.noSaveDir', { category: category ? category.tag : '' }))
+                return
             }
 
-            if (attr.CODECS) {
-                // return `编码格式 - ${attr.CODECS}`;
-                codecs = `${i18n.t('unit.codecs')}: ${attr.CODECS}`;
-            } else if (attr.codecs) {
-                // return `编码格式 - ${attr.bandwidth}`;
-                codecs = `${i18n.t('unit.codecs')}: ${attr.codecs}`;
+            ipcRenderer.send('task-add', {
+                url: url,
+                taskName: name,
+                headers: this.headers,
+                myKeyIV: this.myKeyIV,
+                taskIsDelTs: this.taskIsDelTs,
+                url_prefix: this.m3u8_url_prefix,
+                tag: category.tag,
+                dir: category.dir,
+                audio: audio,
+            })
+        },
+        onTaskAddReply(reply) {
+            const { object, code, message, playlists } = reply
+
+            if (code === 1) {
+                this.playlists = playlists || []
+                this.playlistUri = this.playlists.length ? this.playlists[0].uri : ''
+                this.qualityChange()
+                this.addTaskMessage = message || this.$t('newTask.tips.addTaskMessage')
+                return
             }
 
-            return `${resolution}; ${bitrate}; ${codecs}`
-            // return '链接 - ' + playlist.uri;
-            return `${i18n.t('unit.link')} - ${playlist.uri}`;
-        },
-        proxyChange: function () {
-            ipcRenderer.send('set-config', { key: 'config_proxy', value: this.config_proxy });
-        },
-        concurrencyChange: function (value) {
-            let v = Number.parseInt(value);
-            if (!Number.isFinite(v) || v < 1) v = 3;
-            v = Math.min(v, 32);
-            this.config_downloadConcurrency = v;
-            ipcRenderer.send('set-config', { key: 'config_downloadConcurrency', value: v });
-        },
-        maxRetriesChange: function (value) {
-            let v = Number.parseInt(value);
-            if (!Number.isFinite(v) || v < 1) v = 10;
-            v = Math.min(v, 100);
-            this.config_downloadMaxRetries = v;
-            ipcRenderer.send('set-config', { key: 'config_downloadMaxRetries', value: v });
-        },
-        languageChange: function () {
-            i18n.locale = this.config_language;
-            ipcRenderer.send('set-config', { key: 'language', value: this.config_language });
-        },
-        closeAppBehaviorChange: function () {
-            // console.log(this.config_closeAppBehavior)
-            ipcRenderer.send('set-config', { key: 'closeApp', value: this.config_closeAppBehavior });
-        },
-        qualityChange: function (val) {
-            const quality = this.playlists.find(p => p.uri == val)
-            if (quality) {
-                this.m3u8_audio_url = quality.audio;
-            }
-        },
-        m3u8UrlChange: function () {
-            let args = this.m3u8_url.split(/\s/g);
-            const i = args.findIndex(p => /http(|s):\/\//i.test(p))
-            if (i != -1) {
-                this.m3u8_url = args[i]
-                args.splice(i, 1)
-                this.taskName = args.join(' ')
+            if (object) {
+                const index = this.allVideos.findIndex(o => o.id === object.id)
+                if (index === -1) this.allVideos.unshift(object)
+                else this.allVideos.splice(index, 1, object)
             }
 
-            // if (args.length > 1) {
-            //     args.forEach(k => {
-            //         if (/http(|s):\/\//.test(k)) {
-            //             this.m3u8_url = k;
-            //         } else if (k.length > 1 && !/\s/.test(k)) {
-            //             this.taskName = k;
-            //         }
-            //     })
-            // }
-            this.playlists = [];
-            this.playlistUri = '';
-            this.m3u8_audio_url = '';
-            this.addTaskMessage = i18n.t('message.enterM3U8');//"请输入M3U8视频 url 地址;
-        },
-        notifyTaskStatus: function (code, message) {
-            this.$notify({
-                // dangerouslyUseHTMLString: true,
-                title: i18n.t('message.title'),
-                type: (code == 0 ? 'success' : 'error'),
-                message: message,
-                showClose: true,
-                duration: 3000,
-                position: 'bottom-right'
-            });
-        },
-        clickOpenLogDir: function (e) {
-            ipcRenderer.send('open-log-dir');
-        },
-        clickSelectM3U8: function (e) {
-            ipcRenderer.send('open-select-m3u8');
-        },
-        clickSelectTSDir: function (e) {
-            ipcRenderer.send('open-select-ts-dir');
-        },
-        clickStartMergeTS: function (e) {
-            this.tsMergeMp4Dir = '';
-            this.tsMergeMp4Path = '';
-            this.tsMergeProgress = 0;
-            this.tsMergeStatus = '';
-            // if (!this.config_save_dir) {
-            //     this.tabMain = "tab2_settings";
-            //     // this.$message({ title: '提示', type: 'error', message: "请先设置存储路径，再开始下载视频", offset: 100, duration: 1000 });
-            //     this.$message({ title: i18n.t('message.title'), type: 'error', message: i18n.t('message.noSaveDir'), offset: 100, duration: 1000 });
-            //     return;
-            // }
+            if (code === 0) {
+                this.dlg_newtask_visible = false
+                this.resetNewTask()
+                return
+            }
 
-            // console.log('start merge', this.ts_folder, this.ts_urls.length, this.tsMergeType, this.tsTaskName)
+            if (message) this.$message && this.$message.error(message)
+
+            if (object && code === -1) {
+                setTimeout(() => {
+                    const index = this.allVideos.findIndex(o => o.id === object.id)
+                    if (index !== -1) this.allVideos.splice(index, 1)
+                }, 5000)
+            }
+
+            this.dlg_newtask_visible = false
+            this.resetNewTask()
+        },
+
+        /* ================= 设置 ================= */
+        themeChange(theme) {
+            this.config_theme = theme
+            this.applyTheme(theme)
+            ipcRenderer.send('set-config', { key: 'theme', value: theme })
+        },
+        languageChange() {
+            i18n.locale = this.config_language
+            ipcRenderer.send('set-config', { key: 'language', value: this.config_language })
+        },
+        proxyChange() {
+            ipcRenderer.send('set-config', { key: 'config_proxy', value: this.config_proxy })
+        },
+        stepConcurrency(delta) {
+            const value = Math.max(1, Math.min(32, Number(this.config_downloadConcurrency || 1) + delta))
+            this.config_downloadConcurrency = value
+            ipcRenderer.send('set-config', { key: 'config_downloadConcurrency', value: value })
+        },
+        stepRetries(delta) {
+            const value = Math.max(1, Math.min(100, Number(this.config_downloadMaxRetries || 1) + delta))
+            this.config_downloadMaxRetries = value
+            ipcRenderer.send('set-config', { key: 'config_downloadMaxRetries', value: value })
+        },
+        closeAppBehaviorChange() {
+            ipcRenderer.send('set-config', { key: 'closeApp', value: this.config_closeAppBehavior })
+        },
+        clickOpenLogDir() {
+            ipcRenderer.send('open-log-dir')
+        },
+        clickOpenGithub() {
+            window.open('https://github.com/xiejx/M3U8-Downloader')
+        },
+        clickUpdateApp() {
+            window.open('https://github.com/xiejx/M3U8-Downloader/releases')
+        },
+        ffmpegChange() {
+            ipcRenderer.send('set-config', { key: 'ffmpegPath', value: (this.config_ffmpeg || '').trim() })
+        },
+        clickSelectFfmpeg() {
+            ipcRenderer.send('open-select-ffmpeg')
+        },
+
+        /* ================= 分类管理 ================= */
+        categoryTitle(action) {
+            return this.$t(`settings.dialog.category.title.${action}`)
+        },
+        clickCategoryAddNew() {
+            this.dlg_category_action = 'add'
+            this.dlg_category_title = this.categoryTitle('add')
+            this.dlg_category_modify_name = ''
+            this.dlg_category_index = -1
+            this.categoryForm = { category: '', saveFolder: '', star: false }
+            this.dlg_category_visible = true
+        },
+        clickCategoryModify(category) {
+            this.dlg_category_action = 'modify'
+            this.dlg_category_title = this.categoryTitle('modify')
+            this.dlg_category_modify_name = category.tag
+            this.dlg_category_index = this.config_categories.indexOf(category)
+            this.categoryForm = { category: category.tag, saveFolder: category.dir, star: !!category.star }
+            this.dlg_category_visible = true
+        },
+        askDeleteCategory(index) {
+            const category = this.config_categories[index]
+            if (!category) return
+            this.dlg_category_action = 'delete'
+            this.dlg_category_title = this.categoryTitle('delete')
+            this.dlg_category_index = index
+            this.dlg_category_modify_name = category.tag
+            this.categoryForm = { category: category.tag, saveFolder: category.dir, star: !!category.star }
+            this.dlg_category_visible = true
+        },
+        closeCategory() {
+            this.dlg_category_visible = false
+        },
+        toggleCategoryStar(index) {
+            const category = this.config_categories[index]
+            if (!category) return
+            category.star = !category.star
+            ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories })
+        },
+        clickCategorySelect(index) {
+            ipcRenderer.send('open-directory', index, this.config_categories[index])
+        },
+        clickOpenDir() {
+            ipcRenderer.send('open-directory', -1, this.categoryForm)
+        },
+        submitCategory() {
+            if (this.dlg_category_action === 'delete') {
+                const index = this.dlg_category_index
+                if (index >= 0 && this.config_categories.length > 1) {
+                    const removed = this.config_categories.splice(index, 1)[0]
+                    if (!this.config_categories.some(c => c.select)) this.config_categories[0].select = true
+                    if (this.catFilter === removed.tag) this.catFilter = 'all'
+                    if (this.taskTag === removed.tag) this.taskTag = this.config_categories[0].tag
+                    ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories })
+                }
+                this.dlg_category_visible = false
+                return
+            }
+
+            const tag = (this.categoryForm.category || '').trim()
+            if (!tag) {
+                this.$message && this.$message.warning(this.$t('validateMessage.notEmpty', { name: this.$t('settings.dialog.category.inputs.label') }))
+                return
+            }
+            if (!this.categoryForm.saveFolder) {
+                this.$message && this.$message.warning(this.$t('validateMessage.notEmpty', { name: this.$t('settings.dialog.category.inputs.saveFolder') }))
+                return
+            }
+            const duplicated = this.config_categories.some(c => c.tag === tag && c.tag !== this.dlg_category_modify_name)
+            if (duplicated) {
+                this.$message && this.$message.warning(this.$t('settings.dialog.category.inputs.holder'))
+                return
+            }
+
+            if (this.dlg_category_action === 'add') {
+                this.config_categories.push({
+                    tag: tag,
+                    dir: this.categoryForm.saveFolder,
+                    star: !!this.categoryForm.star,
+                    select: false,
+                })
+            } else {
+                const index = this.dlg_category_index
+                const category = this.config_categories[index]
+                category.tag = tag
+                category.dir = this.categoryForm.saveFolder
+                category.star = !!this.categoryForm.star
+                if (this.catFilter === this.dlg_category_modify_name) this.catFilter = tag
+                if (this.taskTag === this.dlg_category_modify_name) this.taskTag = tag
+            }
+
+            if (!this.config_categories.some(c => c.select)) this.config_categories[0].select = true
+            ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories })
+            this.dlg_category_visible = false
+        },
+
+        /* ================= 合并 ================= */
+        setTsFiles(files) {
+            const absolute = files.filter(f => path.isAbsolute(f))
+            if (absolute.length) {
+                const dir = path.dirname(absolute[0])
+                this.ts_folder = dir
+                this.ts_dir = dir
+                this.ts_urls = absolute.filter(f => path.dirname(f) === dir).map(f => path.basename(f))
+                if (!this.tsTaskName) this.tsTaskName = path.basename(dir)
+                return
+            }
+            this.ts_urls = files.map(f => path.basename(f))
+        },
+        clickSelectTSDir() {
+            ipcRenderer.send('open-select-ts-dir')
+        },
+        dropTSFiles(e) {
+            if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files.length) return
+            const files = Array.from(e.dataTransfer.files)
+                .map(f => f.path)
+                .filter(f => f && /\.ts$/i.test(f))
+            if (files.length) this.setTsFiles(files)
+        },
+        clearMerge() {
+            this.ts_urls = []
+            this.tsMergeProgress = 0
+            this.tsMergeStatus = ''
+            this.tsMergeLog = []
+            this.tsMergeMp4Path = ''
+            this.tsMergeMp4Dir = ''
+        },
+        startMerge(transcoding) {
+            if (!this.ts_urls.length) return
+            if (!this.ts_folder) {
+                this.$message && this.$message.warning(this.$t('mergeTS.inputs.tsDir.holder'))
+                return
+            }
+
+            this.tsMergeType = transcoding ? 'transcoding' : 'speed'
+            this.tsMergeProgress = 0
+            this.tsMergeStatus = ''
+            this.tsMergeLog = []
+            this.tsMergeMp4Path = ''
+            this.tsMergeMp4Dir = ''
+
             ipcRenderer.send('start-merge-ts', {
                 ts_folder: this.ts_folder,
                 ts_files: this.ts_urls,
                 mergeType: this.tsMergeType,
-                name: this.tsTaskName,
-            });
+                name: (this.tsTaskName || '').trim() || `${new Date().getTime()}`,
+                delTs: this.tsMergeDelTs,
+            })
         },
-        clickClearMergeTS: function (e) {
-            this.ts_dir = '';
-            this.ts_urls = [];
-            this.tsTaskName = '';
-            this.tsMergeMp4Dir = '';
-            this.tsMergeMp4Path = '';
-            this.tsMergeProgress = 0;
-            this.tsMergeStatus = '';
-        },
-        clickOpenMergeTSDir: function (e) {
-            ipcRenderer.send('opendir', this.tsMergeMp4Dir, this.tsMergeMp4Path);
-        },
-        clickPlayMergeMp4: function (e) {
-            ipcRenderer.send('playvideo', this.tsMergeMp4Path);
-        },
-        dropM3U8File: function (e) {
-            e.preventDefault();
-
-            if (!e.dataTransfer ||
-                !e.dataTransfer.files ||
-                e.dataTransfer.files.length == 0) {
-                return;
-            }
-            let p = e.dataTransfer.files[0].path;
-            this.m3u8_url = `file:///${p}`;
-        },
-        dropTSFiles: function (e) {
-            e.preventDefault();
-
-            if (!e.dataTransfer ||
-                !e.dataTransfer.files ||
-                e.dataTransfer.files.length == 0) {
-                return;
-            }
-            let _filePath = [];
-            for (let index = 0; index < e.dataTransfer.files.length; index++) {
-                const f = e.dataTransfer.files[index];
-                if (f.path.endsWith('.ts') || f.path.endsWith('.TS')) {
-                    _filePath.push(f.path);
-                }
-            }
-            if (_filePath.length) {
-                this.ts_urls = _filePath;
-                this.ts_dir = i18n.t('mergeTS.tips.select', { total: _filePath.length });// `选择了 [${_filePath.length}] 个视频`;
-
-            } else if (e.dataTransfer.files.length == 1) {
-                this.ts_dir = e.dataTransfer.files[0].path;
-                ipcRenderer.send('open-select-ts-dir', e.dataTransfer.files[0].path);
-            }
-        },
-        clickRefreshComment: function (e) {
-            var GUEST_INFO = ['nick', 'mail', 'link'];
-            var guest_info = 'nick'.split(',').filter(function (item) {
-                return GUEST_INFO.indexOf(item) > -1
-            });
-            var notify = 'false' == true;
-            var verify = 'false' == true;
-            new Valine({
-                el: '.vcomment',
-                notify: notify,
-                verify: verify,
-                appId: "dYhmAWg45dtYACWfTUVR2msp-gzGzoHsz",
-                appKey: "SbuBYWY21MPOSVUCTHdVlXnx",
-                placeholder: "Leave a comment",
-                pageSize: '100',
-                avatar: 'mm',
-                lang: 'zh-cn',
-                meta: guest_info,
-                recordIP: true,
-                path: '/m3u8-downloader'
-            });
-        },
-        clickOpenGithub: function (e) {
-            const url = 'https://github.com/xiejx/M3U8-Downloader'
-            url && shell.openExternal(url)
-        },
-        checkUpdate: function (oldVersion) {
-            ipcRenderer.send('check-update')
-            return
-            let that = this
-            function str2float(v) {
-                // version convert
-// 9999.9999.9999 > 1.1.1 最高支持4位版本对比，如：1.2.1 > 1.2.0   1.3 > 1.2.9999
-                v = `${v}`.replace('v', '')
-                let va = v.split('.', 4);
-                if (!va) return -1;
-                let _r = 0;
-                let base = 100000000.0;
-                va.forEach(k => _r += (base * k), base /= 10000);
-                return _r;
-            }
-            try {
-                // fetch(`https://api.github.com/repos/12343954/M3U8-Downloader/releases/latest`)
-                fetch(`https://api.github.com/repos/12343954/CpuGpuTemper/releases/latest`)
-                    .then(response => response.json())
-                    .then(json => {
-                        that.newVersion = 'v2.2.3'
-                        // console.log(json)
-                        if (!json) return
-                        if (json.message == "Not Found") {
-                            return
-                        }
-
-
-                        if (str2float(json.tag_name) == str2float(oldVersion)) return
-                        this.$set('newVersion', json.tag_name)
-                        // that.newVersion = json.tag_name
-                        // that.newVersion_download_url = `https://github.com/12343954/M3U8-Downloader/releases`
-
-
-                    })
-                    .catch(error => {
-                        // console.error('Error:', error);
-                    });
-            } catch (error) {
-                // that.newVersion = '2.2.3'
-            }
-        },
-        clickUpdateApp: function () {
-            shell.openExternal(this.newVersion_download_url)
-        },
-        handlePageSizeChange: function (val) {
-        },
-        handleCurrentPageChange: function (pageNo) {
-            this.pager_currPage = pageNo
-            const { list, total } = this.pagination()
-            this.pager_data = list
-            this.pager_totalCount = total
-        },
-        pagination: function () {
-            const offset = (this.pager_currPage - 1) * this.pager_pageSize;
-
-            let array = []
-            if (this.current_tag == '')
-                array = this.allVideos
-            else
-                array = this.allVideos.filter(p => p.tag.toLowerCase() == this.current_tag.toLowerCase())
-
-            return {
-                list: (offset + this.pager_pageSize >= array.length) ? array.slice(offset, array.length) : array.slice(offset, offset + this.pager_pageSize),
-                total: array?.length || 0
-            }
-        },
-        handleTagClose: function (tag) {
-            if (this.config_tags.length == 1) return
-
-            if (tag == this.taskTag)
-                this.taskTag = this.config_tags[0]
-
-            this.config_tags.splice(this.config_tags.indexOf(tag), 1)
-            ipcRenderer.send('set-config', { key: 'tags', value: this.config_tags });
-        },
-        showTagInput: function () {
-            const that = this
-            that.input_tag_visible = true
-            that.$nextTick(function () {
-                that.$refs.refInputTag.focus()
-            });
-
-        },
-        handleTagInputConfirm: function () {
-            if (this.input_tag_value) {
-                if (!this.config_tags.includes(this.input_tag_value)) {
-                    this.config_tags.push(this.input_tag_value);
-                    ipcRenderer.send('set-config', { key: 'tags', value: this.config_tags });
-                }
-            }
-            this.input_tag_visible = false
-            this.input_tag_value = ''
-        },
-        handleTagFilte: function (ANode) {
-            this.pager_currPage = 1
-            this.tabMain = 'tab1_download'
-            const tag = ANode.innerText.trim()
-            if (tag == this.current_tag) {
-                ANode.classList.remove('active')
-                this.current_tag = ''
-                window.current_tag = '';    // 提升参数级别到顶级window，方便调用                this.current_tag = ''
-            } else {
-                window.current_tag = tag;       // 提升参数级别到顶级window，方便调用                this.current_tag = tag
-                ANode.parentNode.parentNode.querySelector('.active')?.classList.remove('active')
-                ANode.classList.add('active')
-                this.current_tag = tag
+        onMergeStatus(data) {
+            if (typeof data.progress === 'number' && data.progress >= 0) {
+                this.tsMergeProgress = Math.min(100, data.progress)
             }
 
-            const { list, total } = this.pagination()
-            this.pager_data = list
-            this.pager_totalCount = total
-
-            // console.log('this.pager_currPage=', this.pager_currPage)
-        },
-        clickChangeTaskTag: function (tag) {
-            ipcRenderer.send('set-config', { key: 'taskTag', value: tag });
-            let categories = JSON.parse(JSON.stringify(this.config_categories))
-            categories.map(p => {
-                if (p.tag == tag) p.select = true;
-                else p.select = false;
-            });
-            this.config_categories = categories;
-            ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories });
-        },
-        clickOnTest: function (event) {
-            ipcRenderer.send('test')
-        },
-        clickCategorySelect: function (index) {
-            ipcRenderer.send("open-directory", index, this.config_categories[index]);
-        },
-        clickCategoryOptionBefore: function (index, command) {
-            return { index, command };
-        },
-        clickCategoryOption: function ({ index, command }) {
-            if (command == 'delete') {
-                this.dlg_category_title = i18n.t('settings.dialog.category.title.delete')
-                this.dlg_category_visible = true;
-                this.dlg_category_action = 'delete';
-                this.categoryForm = {
-                    category: this.config_categories[index].tag,
-                    saveFolder: this.config_categories[index].dir,
-                    inputType: 'text',
-                    star: this.config_categories[index].star,
-                }
-            } else {
-                let category = this.config_categories[index];
-                category.star = command ? false : true;
-                this.$set(this.config_categories, index, category);
-                ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories });
-            }
-        },
-        clickCategoryAddNew: function () {
-            this.dlg_category_action = 'add';
-            this.dlg_category_title = i18n.t('settings.dialog.category.title.add')
-            this.dlg_category_visible = true;
-            this.categoryForm = {
-                category: '',
-                saveFolder: '',
-                inputType: 'text',
-                star: false,
-            }
-            setTimeout(() => {
-                this.resetForm('categoryForm');
-            }, 200);
-        },
-        clickCategoryModify: function (category) {
-            this.dlg_category_action = 'modify';
-            this.dlg_category_modify_name = category.tag;
-            this.dlg_category_modify_from = 'settings';
-            this.dlg_category_title = i18n.t('settings.dialog.category.title.modify');
-            this.dlg_category_visible = true;
-            this.categoryForm = {
-                category: category.tag,
-                saveFolder: category.dir,
-                inputType: 'text',
-                star: category.star
-            }
-        },
-        handleChangeFolderStar: function () {
-            this.dlg_category_input_type = this.categoryForm.star ? 'password' : 'text';
-        },
-        submitForm(formName) {
-            switch (formName) {
-                case 'categoryForm':
-                    if (this.dlg_category_action == 'delete') {
-                        const categories = this.config_categories.filter(p => p.tag != this.categoryForm.category);
-                        this.config_categories = categories;
-                        ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories });
-                        this.dlg_category_visible = false;
-                    } else if (this.dlg_category_action == 'add') {
-                        this.$refs[formName].validate((valid) => {
-                            if (valid) {
-                                let category = {
-                                    tag: this.categoryForm.category,
-                                    dir: this.categoryForm.saveFolder,
-                                    star: this.categoryForm.star
-                                };
-                                this.$set(this.config_categories, this.config_categories.length, category); //add new 1
-                                ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories });
-                                this.dlg_category_visible = false;
-                            } else {
-                                // console.log('Error submit!!');
-                                return false;
-                            }
-                        });
-                    } else if (this.dlg_category_action == 'modify') {
-                        this.$refs[formName].validate((valid) => {
-                            if (valid) {
-                                let categories = JSON.parse(JSON.stringify(this.config_categories));
-                                categories.map(p => {
-                                    if (p.tag.toLowerCase() == this.categoryForm.category.toLowerCase()) {
-                                        p.tag = this.categoryForm.category;
-                                        p.dir = this.categoryForm.saveFolder;
-                                        p.star = this.categoryForm.star;
-                                    }
-                                })
-
-                                this.config_categories = categories;
-                                ipcRenderer.send('set-config', { key: 'categories', value: this.config_categories });
-                                this.dlg_category_visible = false;
-                            } else {
-                                return false;
-                            }
-                        });
-                    }
-                    break;
-
-                default:
-                    break;
+            if (data.status) {
+                const line = data.status === 'success' ? this.$t('ui.mergeSuccess') : data.status
+                this.tsMergeStatus = line
+                this.tsMergeLog.push(`${new Date().toLocaleTimeString()}  ${line}`)
+                if (this.tsMergeLog.length > 200) this.tsMergeLog.shift()
             }
 
-        },
-        resetForm(formName) {
-            this.$refs[formName].resetFields();
-            switch (formName) {
-                case 'categoryForm':
-                    if (this.dlg_category_action == 'modify') {
-                        if (this.dlg_newtask_visible) {
-                            this.categoryForm = { ...this.categoryForm, ...{ category: this.taskTag } }
-                        } else if (this.dlg_category_visible) {
-                            this.categoryForm = { ...this.categoryForm, ...{ category: this.dlg_category_modify_name } }
-                        }
-                    } else if (this.dlg_category_action == 'add') {
-                        this.categoryForm = { ...this.categoryForm, ...{ category: '', saveFolder: '', star: false, inputType: 'text' } }
-                    }
-                    break;
-
-                default:
-                    break;
+            if (data.code === 1) {
+                this.tsMergeProgress = 100
+                this.tsMergeMp4Path = data.path || ''
+                this.tsMergeMp4Dir = data.path ? path.dirname(data.path) : (data.dir || '')
             }
-        }
+
+            if ((data.code === -1 || data.code === -2) && data.status) {
+                this.$message && this.$message.error(data.status)
+            }
+        },
+        openMergeOutput() {
+            const target = this.tsMergeMp4Dir || this.tsMergeMp4Path
+            target && ipcRenderer.send('openInExplorer', target)
+        },
+        playMergeOutput() {
+            this.tsMergeMp4Path && ipcRenderer.send('playvideo', this.tsMergeMp4Path)
+        },
     },
-    computed: {
-        themeOptions: function () {
-            return [
-                { value: 'dark', label: this.$t('settings.dropdown.theme.dark') },
-                { value: 'light', label: this.$t('settings.dropdown.theme.light') },
-                { value: 'system', label: this.$t('settings.dropdown.theme.system') }
-            ];
-        },
-        dlg_taskdetail_task: function () {
-            return this.allVideos.find(k => k.id == this.dlg_taskdetail_id) || null;
-        },
-        dlg_taskdetail_stats: function () {
-            const stats = { total: this.dlg_taskdetail_statuses.length, succeeded: 0, failed: 0, downloading: 0, pending: 0 };
-            for (let i = 0; i < this.dlg_taskdetail_statuses.length; i++) {
-                const st = this.dlg_taskdetail_statuses[i];
-                if (st === 2) stats.succeeded++;
-                else if (st === 3) stats.failed++;
-                else if (st === 1) stats.downloading++;
-                else stats.pending++;
-            }
-            return stats;
-        }
-    },
-    watch: {
-        allVideos(newV, oldV) {
-            const { list, total } = this.pagination()
-            this.pager_data = list
-            this.pager_totalCount = total
-        },
-        config_categories: function (newV, oldV) {
-            const div1 = document.querySelector('#mainTab > .is-left > .is-left .el-tabs__nav > div:nth-child(1)');
-            let div2 = document.getElementById('tab_tags_div')
-            if (div2) {
-                if (newV) {
-                    div2.innerHTML = newV?.map(k => `<p><a type="button" class="el-button el-button--info is-text ${window.current_tag == k.tag ? 'active' : ''}" onclick="tag_filte(this)"><span class="">${k.tag}</span></a></p>`).join('');
-                } else {
-                    div2.innerHTML = '';
-                }
-            } else {
-                div2 = document.createElement('div')
-                div2.id = 'tab_tags_div'
-                div2.className = "el-tabs__item is-left"
-                div2.style = "padding-top: 0;"
-                if (newV) {
-                    div2.innerHTML = newV?.map(k => `<p><a type="button" class="el-button el-button--info is-text ${window.current_tag == k.tag ? 'active' : ''}" onclick="tag_filte(this)"><span class="">${k.tag}</span></a></p>`).join('');
-                } else {
-                    div2.innerHTML = '';
-                }
-                const parent = div1.parentNode;
-                parent.insertBefore(div2, div1.nextSibling);
-            }
-        }
-    },
-    mounted: function () {
-        let that = this
-        that.installEvent();
-        setTimeout(() => {
-            that.checkUpdate(that.version)
-        }, 5000);
-
-        window.tag_filte = that.handleTagFilte;
-    }
-}).$mount('#app');
+})

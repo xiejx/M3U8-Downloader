@@ -684,14 +684,15 @@ body,
     display: flex;
     flex-direction: column;
     flex: 1;
+    min-width: 0;
 }
 
 .heisir .main .TaskList .item .link {
-    text-overflow: ellipsis;
     color: #656565;
     overflow: hidden;
-    margin-bottom: 10px;
-    line-break: anywhere;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    margin-bottom: 6px;
 }
 
 .heisir .main .TaskList .item .link input {
@@ -708,9 +709,13 @@ body,
     /* left: 64px;
     bottom: 5px; */
     /* display: inline-block; */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
     color: #517aff;
     /* margin-top: 10px; */
-    margin-bottom: 10px;
+    margin-bottom: 6px;
 }
 
 .heisir .main .TaskList .item .name .value {
@@ -721,7 +726,15 @@ body,
     /* overflow: hidden !important; */
     /* display: inline-block; */
     /* font-size: .9rem; */
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     cursor: pointer;
+}
+
+.heisir .main .TaskList .item .name .el-tag {
+    flex: 0 0 auto;
 }
 
 .heisir .main .TaskList .item .timestatus {
